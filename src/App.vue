@@ -87,32 +87,21 @@ onMounted(() => {
     <div class="sidebar" :style="{ width: sidebarWidth + 'px' }">
       <GenreList @genre-selected="handleGenreSelected" />
     </div>
-    <div
-      class="resize-handle"
-      @mousedown="onMouseDownHandle"
-      :class="{ active: isResizing }"
-      aria-label="Resize sidebar"
-    />
+    <div class="resize-handle" @mousedown="onMouseDownHandle" :class="{ active: isResizing }"
+      aria-label="Resize sidebar" />
     <div class="content">
       <div class="toolbar">
-        <button class="new-btn" @click="toggleAddForm">
-          新規＋ <!-- 常に固定表示 -->
+        <button class="btn primary" @click="toggleAddForm">
+          新規＋
         </button>
       </div>
 
       <!-- モーダル (Teleport で body 直下へ) -->
       <teleport to="body">
         <transition name="fade">
-          <div
-            v-if="showAddForm"
-            class="modal-overlay"
-            @click.self="closeAddForm"
-          >
+          <div v-if="showAddForm" class="modal-overlay" @click.self="closeAddForm">
             <div class="modal" role="dialog" aria-modal="true">
-              <AddBookForm
-                @book-added="handleBookAdded"
-                @close="closeAddForm"
-              />
+              <AddBookForm @book-added="handleBookAdded" @close="closeAddForm" />
             </div>
           </div>
         </transition>
@@ -154,6 +143,7 @@ onMounted(() => {
   transition: background 0.15s;
   user-select: none;
 }
+
 .resize-handle:hover,
 .resize-handle.active {
   background: #bdbdbd;
@@ -166,6 +156,7 @@ onMounted(() => {
   flex-direction: column;
   min-width: 0;
 }
+
 .toolbar {
   display: flex;
   gap: 8px;
@@ -173,33 +164,54 @@ onMounted(() => {
   border-bottom: 1px solid #ddd;
   background: #fafafa;
 }
-.new-btn {
+
+/* 統一ボタンスタイル (.btn) */
+.btn {
   padding: 4px 10px;
   font-size: 13px;
   cursor: pointer;
   border: 1px solid #bbb;
   background: #fff;
   border-radius: 4px;
+  line-height: 1.3;
+  transition: background .15s, border-color .15s, box-shadow .15s;
 }
-.new-btn:hover {
+
+.btn:hover:not(:disabled) {
   background: #f0f0f0;
+}
+
+.btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1565c0;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: #1565c0;
 }
 
 /* モーダル */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.35);
+  background: rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding-top: 60px;
   z-index: 1000;
 }
+
 .modal {
   background: #fff;
   border-radius: 6px;
-  box-shadow: 0 6px 24px rgba(0,0,0,0.25);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
   min-width: 640px;
   max-width: 860px;
   width: 70%;
@@ -211,14 +223,22 @@ onMounted(() => {
 .fade-leave-to {
   opacity: 0;
 }
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity .18s ease;
 }
 
 @keyframes popup {
-  from { transform: translateY(8px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 /* ドラッグ中にテキスト選択抑制 */

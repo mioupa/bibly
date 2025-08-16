@@ -123,7 +123,7 @@ async function submit() {
         </select>
       </div>
       <div class="actions">
-        <button type="submit" :disabled="submitting">追加</button>
+        <button type="submit" class="btn primary" :disabled="submitting">追加</button>
         <span class="error" v-if="errorMsg">{{ errorMsg }}</span>
       </div>
     </form>
@@ -213,13 +213,46 @@ async function submit() {
   margin-top: 4px;
 }
 
-button {
-  padding: 4px 14px;
+/* 共通ボタンスタイル (BookList / App と揃える) */
+.btn {
+  padding: 4px 10px;
+  font-size: 13px;
   cursor: pointer;
+  border: 1px solid #bbb;
+  background: #fff;
+  border-radius: 4px;
+  line-height: 1.3;
+  transition: background .15s, border-color .15s, box-shadow .15s;
 }
 
-.error {
-  color: #d00;
-  font-size: 12px;
+.btn:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+
+.btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1565c0;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+/* 既存 button セレクタでの padding 指定があれば影響するので削除/調整 */
+button {
+  padding: 0;
+  /* ← 全体指定を無効化して .btn に委譲 (既存で padding 付与していた場合) */
+  background: none;
+  border: none;
+}
+
+.actions .btn {
+  /* actions 内で整列 */
 }
 </style>

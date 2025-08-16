@@ -12,10 +12,44 @@ const visibleColumns = ref({
   isbn: true,
   author: true,
   publisher: true,
-  c_code: true,       // ← 追加
+  c_code: true,
   price: true,
   is_read: true,
 });
+
+// ▼ 追加: 列メニュー制御
+const showColumnMenu = ref(false);
+const columnMenuRef = ref<HTMLElement | null>(null);
+const columnBtnRef = ref<HTMLElement | null>(null);
+const columnOptions = [
+  { key: 'isbn', label: 'ISBN' },
+  { key: 'author', label: '著者' },
+  { key: 'publisher', label: '出版社' },
+  { key: 'c_code', label: 'Cコード' },
+  { key: 'price', label: '値段' },
+  { key: 'is_read', label: '読了' },
+];
+
+function toggleColumnMenu() {
+  showColumnMenu.value = !showColumnMenu.value;
+}
+
+function toggleColumn(key: string) {
+  (visibleColumns.value as any)[key] = !(visibleColumns.value as any)[key];
+}
+
+function onClickOutside(e: MouseEvent) {
+  if (!showColumnMenu.value) return;
+  const target = e.target as Node;
+  if (
+    columnMenuRef.value &&
+    columnBtnRef.value &&
+    !columnMenuRef.value.contains(target) &&
+    !columnBtnRef.value.contains(target)
+  ) {
+    showColumnMenu.value = false;
+  }
+}
 
 const columnWidths = ref<Record<string, number>>({
   title: 240,
@@ -74,6 +108,7 @@ const editGenreName = ref(''); // 編集時のジャンル名入力
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
+  document.addEventListener('click', onClickOutside); // ← 追加
   // ジャンル一覧を先に取っておく
   (async () => {
     try {
@@ -87,6 +122,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onMouseMove);
   window.removeEventListener('mouseup', onMouseUp);
+  document.removeEventListener('click', onClickOutside); // ← 追加
 });
 
 // ===== 編集モーダル状態 =====
@@ -115,7 +151,6 @@ function openEdit(book: Book) {
 }
 
 function closeEdit() {
-  if (editSubmitting.value) return;
   editing.value = false;
   editForm.value = null;
 }
@@ -137,7 +172,7 @@ async function submitEdit() {
     if (idx !== -1) {
       Object.assign(props.books[idx], updated);
     }
-    closeEdit();
+    closeEdit(); // ← これで正常に閉じる
   } catch (e) {
     console.error(e);
     editError.value = '更新に失敗しました';
@@ -158,16 +193,29 @@ async function ensureGenreIdForEdit(name: string): Promise<number> {
 
 <template>
   <div class="book-list-container" :class="{ resizing: isResizing }">
-    <h2>書籍一覧</h2>
-
-    <div class="column-selector">
-      <strong>表示項目:</strong>
-      <label><input type="checkbox" v-model="visibleColumns.isbn"> ISBN</label>
-      <label><input type="checkbox" v-model="visibleColumns.author"> 著者</label>
-      <label><input type="checkbox" v-model="visibleColumns.publisher"> 出版社</label>
-      <label><input type="checkbox" v-model="visibleColumns.c_code"> Cコード</label> <!-- 追加 -->
-      <label><input type="checkbox" v-model="visibleColumns.price"> 値段</label>
-      <label><input type="checkbox" v-model="visibleColumns.is_read"> 読了</label>
+    <!-- ▼ ヘッダーを変更 -->
+    <div class="list-header">
+      <h2>書籍一覧</h2>
+      <div class="header-actions">
+        <button ref="columnBtnRef" type="button" class="btn" @click="toggleColumnMenu" aria-haspopup="true"
+          :aria-expanded="showColumnMenu">
+          表示項目 ▾
+        </button>
+        <transition name="fade">
+          <div v-if="showColumnMenu" ref="columnMenuRef" class="column-menu" role="menu">
+            <ul>
+              <li v-for="opt in columnOptions" :key="opt.key" @click.stop="toggleColumn(opt.key)" class="column-item"
+                :class="{ active: (visibleColumns as any)[opt.key] }" role="menuitemcheckbox"
+                :aria-checked="(visibleColumns as any)[opt.key]">
+                <span class="check-area">
+                  <span v-if="(visibleColumns as any)[opt.key]" class="check-mark">✓</span>
+                </span>
+                <span class="label">{{ opt.label }}</span>
+              </li>
+            </ul>
+          </div>
+        </transition>
+      </div>
     </div>
 
     <div v-if="books.length > 0" class="table-wrapper">
@@ -229,11 +277,14 @@ async function ensureGenreIdForEdit(name: string): Promise<number> {
         </thead>
         <tbody>
           <tr v-for="book in books" :key="book.id">
-            <td class="title-cell" @click="openEdit(book)"><span class="title-link">{{ book.title }}</span></td>
+            <td class="title-cell">
+              <span class="title-text">{{ book.title }}</span>
+              <button type="button" class="edit-inline-btn btn" @click.stop="openEdit(book)" aria-label="編集">編集</button>
+            </td>
             <td v-if="visibleColumns.isbn">{{ book.isbn }}</td>
             <td v-if="visibleColumns.author">{{ book.author }}</td>
             <td v-if="visibleColumns.publisher">{{ book.publisher }}</td>
-            <td v-if="visibleColumns.c_code">{{ book.c_code }}</td> <!-- 追加 -->
+            <td v-if="visibleColumns.c_code">{{ book.c_code }}</td>
             <td v-if="visibleColumns.price">{{ book.price }}</td>
             <td v-if="visibleColumns.is_read">{{ book.is_read === 1 ? '済' : '未' }}</td>
           </tr>
@@ -244,13 +295,15 @@ async function ensureGenreIdForEdit(name: string): Promise<number> {
       <p>表示する書籍がありません。ジャンルを選択してください。</p>
     </div>
   </div>
+
+  <!-- 編集モーダル -->
   <teleport to="body">
     <transition name="fade">
       <div v-if="editing" class="edit-overlay" @click.self="closeEdit">
         <div class="edit-modal" role="dialog" aria-modal="true">
           <div class="edit-header">
             <strong>書籍編集</strong>
-            <button type="button" class="close-btn" @click="closeEdit" :disabled="editSubmitting">×</button>
+            <button type="button" class="btn close-btn" @click="closeEdit" :disabled="editSubmitting">×</button>
           </div>
           <form v-if="editForm" class="edit-form" @submit.prevent="submitEdit">
             <div class="grid">
@@ -290,8 +343,8 @@ async function ensureGenreIdForEdit(name: string): Promise<number> {
               </label>
             </div>
             <div class="actions">
-              <button type="submit" :disabled="editSubmitting">保存</button>
-              <button type="button" @click="closeEdit" :disabled="editSubmitting">キャンセル</button>
+              <button type="submit" class="btn primary" :disabled="editSubmitting">保存</button>
+              <button type="button" class="btn" @click="closeEdit" :disabled="editSubmitting">キャンセル</button>
               <span class="error" v-if="editError">{{ editError }}</span>
             </div>
           </form>
@@ -316,14 +369,6 @@ async function ensureGenreIdForEdit(name: string): Promise<number> {
   cursor: col-resize;
 }
 
-.column-selector {
-  margin-bottom: 1em;
-  display: flex;
-  gap: 1em;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
 .table-wrapper {
   flex-grow: 1;
   overflow: auto;
@@ -341,7 +386,8 @@ table {
 th,
 td {
   border: 1px solid #ddd;
-  padding: 4px 6px;
+  padding: 6px 8px;
+  /* 行高さ拡張 */
   text-align: left;
   /* 折り返し可能に変更 */
   white-space: normal;
@@ -355,25 +401,57 @@ td {
   text-overflow: clip;
   /* 省略記号不要 */
   font-size: 14px;
-  line-height: 1.3;
+  line-height: 1.45;
+  /* 縦方向余裕 */
 }
 
-/* タイトルリンク風 */
+/* タイトルセル＋インライン編集ボタン */
 .title-cell {
-  padding: 0;
+  position: relative;
+  padding: 8px 8px;
+  /* 余白拡大 */
+  /* ボタンぶんの余白を確保したい場合は下行のコメントを外す */
+  /* padding-right: 56px; */
+  overflow: visible;
+  /* ボタンの下がクリップされないように */
 }
 
-.title-link {
-  display: inline-block;
-  width: 100%;
-  padding: 4px 6px;
-  color: #1565c0;
-  text-decoration: underline;
-  cursor: pointer;
+.title-text {
+  display: block;
+  font-weight: 500;
+  color: #222;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
-.title-link:hover {
-  color: #0d47a1;
+.edit-inline-btn {
+  position: absolute;
+  top: 50%;
+  /* 縦中央 */
+  right: 8px;
+  transform: translateY(-50%);
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s;
+  white-space: nowrap;
+  z-index: 1;
+  /* テキスト上に重ねる */
+  /* 背景を半透明にして下の文字を若干読めるようにしたい場合:
+     background: rgba(255,255,255,0.85); */
+}
+
+tbody tr:hover .edit-inline-btn,
+.title-cell:hover .edit-inline-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 行ホバー時の視認性向上（任意） */
+tbody tr:hover {
+  background: #eef5ff;
 }
 
 /* 編集モーダル */
@@ -481,6 +559,37 @@ td {
   cursor: pointer;
 }
 
+/* ▼ 追加: 共通ボタンスタイル */
+.btn {
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid #bbb;
+  background: #fff;
+  border-radius: 4px;
+  line-height: 1.3;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+}
+
+.btn:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+
+.btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1565c0;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: #1565c0;
+}
+
 .error {
   color: #d00;
   font-size: 12px;
@@ -547,5 +656,93 @@ th {
 
 .col-resizing * {
   cursor: col-resize !important;
+}
+
+/* ヘッダー */
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: .6em;
+  flex-wrap: wrap;
+}
+
+.list-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.header-actions {
+  position: relative;
+}
+
+/* 列メニュー */
+.column-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .15);
+  z-index: 50;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.column-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.column-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: background .12s;
+}
+
+.column-item:hover {
+  background: #f5f5f5;
+}
+
+.column-item.active .label {
+  font-weight: 600;
+}
+
+.check-area {
+  width: 18px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.check-mark {
+  font-size: 12px;
+  color: #1565c0;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* 編集モーダル内の close-btn は .btn を利用するため微調整 */
+.close-btn {
+  font-size: 16px;
+  padding: 2px 6px;
+  line-height: 1;
+  border: 1px solid transparent;
+}
+
+.close-btn:hover {
+  background: #eee;
 }
 </style>

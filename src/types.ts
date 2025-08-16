@@ -42,3 +42,10 @@ export interface UpdateBook {
   is_read: number;
   genre_id?: number; // ← 追加
 }
+
+export interface CCodeInterpretation {
+  c_code: string;
+  audience?: string | null;
+  form?: string | null;
+  content?: string | null;
+}
