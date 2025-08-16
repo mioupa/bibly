@@ -252,7 +252,4 @@ button {
   border: none;
 }
 
-.actions .btn {
-  /* actions 内で整列 */
-}
 </style>
