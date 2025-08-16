@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import type { Book, UpdateBook } from '../types';
+import type { Book, UpdateBook, Genre } from '../types';
 
 const props = defineProps<{
   books: Book[]
@@ -68,9 +68,20 @@ function onMouseUp() {
   }
 }
 
+const genres = ref<Genre[]>([]); // ジャンル一覧を取得して編集で使う
+const editGenreName = ref(''); // 編集時のジャンル名入力
+
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
+  // ジャンル一覧を先に取っておく
+  (async () => {
+    try {
+      genres.value = await invoke<Genre[]>('get_genres');
+    } catch (e) {
+      console.error('Failed to fetch genres for edit:', e);
+    }
+  })();
 });
 
 onBeforeUnmount(() => {
@@ -95,7 +106,11 @@ function openEdit(book: Book) {
     price: book.price,
     c_code: book.c_code,
     is_read: book.is_read,
+    genre_id: book.genre_id ?? -1,
   };
+  // 編集用の表示名を genre_id から解決
+  const g = genres.value.find(x => x.id === (book.genre_id ?? -1));
+  editGenreName.value = g ? g.name : '';
   editing.value = true;
 }
 
@@ -114,7 +129,10 @@ async function submitEdit() {
   editSubmitting.value = true;
   editError.value = '';
   try {
-    const updated = await invoke<Book>('update_book', { book: { ...editForm.value, title: editForm.value.title.trim() } });
+    // ジャンル名からIDを確定
+    const resolvedGenreId = await ensureGenreIdForEdit(editGenreName.value.trim() || '未分類');
+    const payload = { ...editForm.value, title: editForm.value.title.trim(), genre_id: resolvedGenreId };
+    const updated = await invoke<Book>('update_book', { book: payload });
     const idx = props.books.findIndex((b: Book) => b.id === updated.id);
     if (idx !== -1) {
       Object.assign(props.books[idx], updated);
@@ -126,6 +144,15 @@ async function submitEdit() {
   } finally {
     editSubmitting.value = false;
   }
+}
+
+// 編集時にジャンル名を確保してIDを返す（AddBookForm と同様）
+async function ensureGenreIdForEdit(name: string): Promise<number> {
+  const found = genres.value.find(g => g.name === name);
+  if (found) return found.id;
+  const newGenre = await invoke<Genre>('add_genre', { name });
+  genres.value.push(newGenre);
+  return newGenre.id;
 }
 </script>
 
@@ -227,9 +254,19 @@ async function submitEdit() {
           </div>
           <form v-if="editForm" class="edit-form" @submit.prevent="submitEdit">
             <div class="grid">
-              <label>タイトル<span class="req">*</span>
+              <label>
+                <span class="label-head">タイトル<span class="req">*</span></span>
                 <input v-model="editForm.title" required />
               </label>
+
+              <!-- ここにジャンル入力を追加 -->
+              <label>ジャンル
+                <input v-model="editGenreName" list="edit-genre-list" />
+                <datalist id="edit-genre-list">
+                  <option v-for="g in genres" :key="g.id" :value="g.name" />
+                </datalist>
+              </label>
+
               <label>ISBN
                 <input v-model="editForm.isbn" />
               </label>
@@ -270,7 +307,8 @@ async function submitEdit() {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0; /* 親 flex からの縮小制約を解除 */
+  min-width: 0;
+  /* 親 flex からの縮小制約を解除 */
 }
 
 .book-list-container.resizing {
@@ -288,52 +326,187 @@ async function submitEdit() {
 
 .table-wrapper {
   flex-grow: 1;
-  overflow: auto; /* 横スクロール許可 */
+  overflow: auto;
+  /* 横スクロール許可 */
 }
 
 /* テーブルは合計幅に固定。余白配分させない */
 table {
   table-layout: fixed;
   border-collapse: collapse;
-  display: inline-table; /* 余白に広がらない */
+  display: inline-table;
+  /* 余白に広がらない */
 }
 
-th, td {
+th,
+td {
   border: 1px solid #ddd;
   padding: 4px 6px;
   text-align: left;
   /* 折り返し可能に変更 */
-  white-space: normal; /* デフォルト折り返し */
-  overflow-wrap: anywhere; /* 長いISBN等を強制改行可 */
-  word-break: break-word; /* 旧ブラウザ対策 */
-  overflow: hidden; /* 隣列へのはみ出し防止 */
-  text-overflow: clip; /* 省略記号不要 */
+  white-space: normal;
+  /* デフォルト折り返し */
+  overflow-wrap: anywhere;
+  /* 長いISBN等を強制改行可 */
+  word-break: break-word;
+  /* 旧ブラウザ対策 */
+  overflow: hidden;
+  /* 隣列へのはみ出し防止 */
+  text-overflow: clip;
+  /* 省略記号不要 */
   font-size: 14px;
   line-height: 1.3;
 }
 
 /* タイトルリンク風 */
-.title-cell { padding: 0; }
-.title-link { display:inline-block; width:100%; padding:4px 6px; color:#1565c0; text-decoration:underline; cursor:pointer; }
-.title-link:hover { color:#0d47a1; }
+.title-cell {
+  padding: 0;
+}
+
+.title-link {
+  display: inline-block;
+  width: 100%;
+  padding: 4px 6px;
+  color: #1565c0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.title-link:hover {
+  color: #0d47a1;
+}
 
 /* 編集モーダル */
-.edit-overlay { position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:flex-start; justify-content:center; padding-top:70px; z-index:1200; }
-.edit-modal { background:#fff; border-radius:6px; box-shadow:0 6px 24px rgba(0,0,0,.25); width:660px; max-width:90%; animation:popup .18s ease; font-size:13px; }
-.edit-header { display:flex; justify-content:space-between; align-items:center; padding:10px 14px 4px; border-bottom:1px solid #eee; font-size:14px; }
-.close-btn { background:transparent; border:none; font-size:18px; cursor:pointer; padding:2px 6px; border-radius:4px; }
-.close-btn:hover { background:#eee; }
-.edit-form { padding:12px 14px 16px; display:flex; flex-direction:column; gap:14px; }
-.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px 16px; }
-.grid label { display:flex; flex-direction:column; gap:4px; font-weight:600; }
-.grid input, .grid select { font-weight:normal; font-size:13px; padding:4px 6px; border:1px solid #bbb; border-radius:4px; }
-.req { color:#d00; margin-left:4px; font-size:11px; font-weight:normal; }
-.actions { display:flex; gap:12px; align-items:center; }
-.actions button { padding:4px 14px; cursor:pointer; }
-.error { color:#d00; font-size:12px; }
-.fade-enter-from, .fade-leave-to { opacity:0; }
-.fade-enter-active, .fade-leave-active { transition:opacity .18s ease; }
-@keyframes popup { from { transform:translateY(8px); opacity:0;} to { transform:translateY(0); opacity:1;} }
+.edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 70px;
+  z-index: 1200;
+}
+
+.edit-modal {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+  width: 660px;
+  max-width: 90%;
+  animation: popup .18s ease;
+  font-size: 13px;
+}
+
+.edit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px 4px;
+  border-bottom: 1px solid #eee;
+  font-size: 14px;
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.close-btn:hover {
+  background: #eee;
+}
+
+.edit-form {
+  padding: 12px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px 16px;
+}
+
+.grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.grid input,
+.grid select {
+  font-weight: normal;
+  font-size: 13px;
+  padding: 4px 6px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+}
+
+.req {
+  color: #d00;
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: normal;
+  display: inline-block;
+  /* ← 追加: アスタリスクを折り返さない */
+  white-space: nowrap;
+  /* ← 追加 */
+  vertical-align: middle;
+  /* ← 追加 */
+}
+
+.label-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.actions button {
+  padding: 4px 14px;
+  cursor: pointer;
+}
+
+.error {
+  color: #d00;
+  font-size: 12px;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity .18s ease;
+}
+
+@keyframes popup {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
 
 tbody tr:nth-child(even) {
   background-color: #f9f9f9;
@@ -369,7 +542,7 @@ th {
 
 .col-resizer:hover,
 .col-resizer:active {
-  background: rgba(0,0,0,0.15);
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .col-resizing * {

@@ -8,8 +8,9 @@ export interface Book {
   author?: string;
   publisher?: string;
   price?: number;
-  c_code?: string;      // ← 追加
+  c_code?: string;
   is_read: number;
+  genre_id?: number; // ← 追加
 }
 
 // Genreの型もついでにこちらに移動しておくと、さらに管理しやすくなります
@@ -39,15 +40,5 @@ export interface UpdateBook {
   price?: number;
   c_code?: string;
   is_read: number;
-}
-
-export interface UpdateBook {
-  id: number;
-  title: string;
-  isbn?: string;
-  author?: string;
-  publisher?: string;
-  price?: number;
-  c_code?: string;
-  is_read: number;
+  genre_id?: number; // ← 追加
 }

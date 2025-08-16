@@ -9,6 +9,7 @@ const emit = defineEmits<{
 }>();
 
 const genres = ref<Genre[]>([]);
+const genreName = ref(''); // ← 入力可能なジャンル名を保持
 const form = ref<NewBook>({
   title: '',
   genre_id: -1,
@@ -16,7 +17,7 @@ const form = ref<NewBook>({
   author: '',
   publisher: '',
   price: undefined,
-  c_code: '',        // ← 追加
+  c_code: '',
   is_read: 0,
 });
 const submitting = ref(false);
@@ -25,21 +26,31 @@ const errorMsg = ref('');
 onMounted(async () => {
   try {
     genres.value = await invoke<Genre[]>('get_genres');
-    if (genres.value.length && form.value.genre_id === -1) {
-      form.value.genre_id = genres.value[0].id;
-    }
+    // 新規登録時はデフォルトで空欄にする（ユーザーが選択または入力）
+    // 以前の実装で先頭ジャンルを自動セットしていた処理を削除しました
   } catch (e) {
     errorMsg.value = 'ジャンル取得に失敗しました';
   }
 });
 
+// ジャンル名からIDを確実に取得。無ければ add_genre を呼んで作成して返す
+async function ensureGenreId(name: string): Promise<number> {
+  const found = genres.value.find(g => g.name === name);
+  if (found) return found.id;
+  const newGenre = await invoke<Genre>('add_genre', { name });
+  genres.value.push(newGenre);
+  return newGenre.id;
+}
+
 async function submit() {
-  if (!form.value.title.trim() || form.value.genre_id === -1) return;
+  if (!form.value.title.trim() || !genreName.value.trim()) return;
   submitting.value = true;
   errorMsg.value = '';
   try {
+    const genreId = await ensureGenreId(genreName.value.trim());
     const payload: NewBook = {
       ...form.value,
+      genre_id: genreId,
       price: form.value.price == null ? undefined : Number(form.value.price),
       c_code: form.value.c_code?.trim() || undefined,
     };
@@ -52,7 +63,9 @@ async function submit() {
     form.value.publisher = '';
     form.value.price = undefined;
     form.value.is_read = 0;
-    form.value.c_code = ''; // 追加
+    form.value.c_code = '';
+    // ジャンルは初期値を維持（先頭に戻す）
+    if (genres.value.length) genreName.value = genres.value[0].name;
   } catch (e) {
     errorMsg.value = '登録に失敗しました';
     console.error(e);
@@ -75,9 +88,11 @@ async function submit() {
       </div>
       <div class="row">
         <label>ジャンル<span class="req">*</span></label>
-        <select v-model="form.genre_id" required>
-          <option v-for="g in genres" :key="g.id" :value="g.id">{{ g.name }}</option>
-        </select>
+        <!-- datalist を使って既存ジャンルを候補表示しつつ自由入力を許可 -->
+        <input v-model="genreName" list="genre-list" required placeholder="ジャンルを選択または入力" />
+        <datalist id="genre-list">
+          <option v-for="g in genres" :key="g.id" :value="g.name" />
+        </datalist>
       </div>
       <div class="row">
         <label>ISBN</label>
@@ -104,7 +119,7 @@ async function submit() {
         <label>読了</label>
         <select v-model="form.is_read">
           <option :value="0">未</option>
-            <option :value="1">済</option>
+          <option :value="1">済</option>
         </select>
       </div>
       <div class="actions">
@@ -119,6 +134,7 @@ async function submit() {
 .form-wrapper {
   padding: 4px 4px 12px;
 }
+
 .form-header {
   display: flex;
   justify-content: space-between;
@@ -126,6 +142,7 @@ async function submit() {
   padding: 6px 10px 2px;
   font-size: 14px;
 }
+
 .close-btn {
   border: none;
   background: transparent;
@@ -135,9 +152,11 @@ async function submit() {
   padding: 2px 6px;
   border-radius: 4px;
 }
+
 .close-btn:hover {
   background: #eee;
 }
+
 .add-book-form {
   display: flex;
   flex-wrap: wrap;
@@ -150,21 +169,42 @@ async function submit() {
   margin-bottom: 12px;
   font-size: 13px;
 }
+
+.add-book-form input,
+.add-book-form select {
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  /* ← 角丸を追加 */
+  padding: 4px 6px;
+  font-size: 13px;
+  font-weight: normal;
+}
+
 .row {
   display: flex;
   flex-direction: column;
   min-width: 140px;
   flex: 1 1 160px;
 }
+
 .row label {
   font-weight: 600;
   margin-bottom: 2px;
 }
+
 .req {
   color: #d00;
   margin-left: 4px;
   font-size: 11px;
+  font-weight: normal;
+  display: inline-block;
+  /* ← 追加: アスタリスクを折り返さない */
+  white-space: nowrap;
+  /* ← 追加 */
+  vertical-align: middle;
+  /* ← 追加: テキストと揃える */
 }
+
 .actions {
   display: flex;
   gap: 12px;
@@ -172,10 +212,12 @@ async function submit() {
   flex: 1 1 100%;
   margin-top: 4px;
 }
+
 button {
   padding: 4px 14px;
   cursor: pointer;
 }
+
 .error {
   color: #d00;
   font-size: 12px;

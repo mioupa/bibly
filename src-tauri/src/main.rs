@@ -3,6 +3,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use rusqlite::params;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -20,7 +21,7 @@ pub struct Genre {
     name: String,
 }
 
-// フロントエンドに渡すBookのデータ構造 (項目を増やす)
+// フロントエンドに渡すBookのデータ構造
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Book {
     id: i64,
@@ -29,20 +30,21 @@ pub struct Book {
     author: Option<String>,
     publisher: Option<String>,
     price: Option<i64>,
-    c_code: Option<String>, // ← 追加
+    c_code: Option<String>,
     is_read: i64,
+    genre_id: Option<i64>,
 }
 
-// 新規書籍登録用のデータ構造
+// 新規作成でフロントから送られてくるデータ構造
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NewBook {
     title: String,
-    genre_id: i64,
+    genre_id: Option<i64>,
     isbn: Option<String>,
     author: Option<String>,
     publisher: Option<String>,
     price: Option<i64>,
-    c_code: Option<String>, // ← 追加
+    c_code: Option<String>,
     is_read: Option<i64>,
 }
 
@@ -57,37 +59,57 @@ pub struct UpdateBook {
     price: Option<i64>,
     c_code: Option<String>,
     is_read: i64,
+    genre_id: Option<i64>,
 }
 
-// ジャンル一覧を取得するコマンド
+// GET: ジャンル一覧取得コマンド
 #[tauri::command]
 fn get_genres(db: State<DbConnection>) -> Result<Vec<Genre>, String> {
     let conn = db.0.lock().unwrap();
     let mut stmt = conn
-        .prepare("SELECT id, name FROM genres ORDER BY id") // ORDER BYを追加
+        .prepare("SELECT id, name FROM genres ORDER BY name")
         .map_err(|e| e.to_string())?;
-    let genre_iter = stmt
-        .query_map([], |row| {
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+    let mut genres = Vec::new();
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        genres.push(Genre {
+            id: row.get(0).map_err(|e| e.to_string())?,   // ← 修正
+            name: row.get(1).map_err(|e| e.to_string())?, // ← 修正
+        });
+    }
+    Ok(genres)
+}
+
+// ★★ 新規コマンド: ジャンル追加（存在すれば取得） ★★
+#[tauri::command]
+fn add_genre(name: String, db: State<DbConnection>) -> Result<Genre, String> {
+    let conn = db.0.lock().unwrap();
+    // 重複を許さず、既存なら無視して最後に必ず取得する
+    conn.execute(
+        "INSERT OR IGNORE INTO genres (name) VALUES (?1)",
+        rusqlite::params![name],
+    )
+    .map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT id, name FROM genres WHERE name = ?1")
+        .map_err(|e| e.to_string())?;
+    let genre = stmt
+        .query_row([&name], |row| {
             Ok(Genre {
                 id: row.get(0)?,
                 name: row.get(1)?,
             })
         })
         .map_err(|e| e.to_string())?;
-
-    let mut genres = Vec::new();
-    for genre in genre_iter {
-        genres.push(genre.map_err(|e| e.to_string())?);
-    }
-    Ok(genres)
+    Ok(genre)
 }
 
-// ★★★ 新しく追加: 全ての書籍を取得するコマンド ★★★
+// ===== 各クエリで genre_id を返すように修正 =====
 #[tauri::command]
 fn get_all_books(db: State<DbConnection>) -> Result<Vec<Book>, String> {
     let conn = db.0.lock().unwrap();
     let mut stmt = conn
-        .prepare("SELECT id, isbn, title, author, publisher, price, c_code, is_read FROM books")
+        .prepare("SELECT id, isbn, title, author, publisher, price, c_code, is_read, genre_id FROM books")
         .map_err(|e| e.to_string())?;
     let book_iter = stmt
         .query_map([], |row| {
@@ -100,6 +122,7 @@ fn get_all_books(db: State<DbConnection>) -> Result<Vec<Book>, String> {
                 price: row.get(5)?,
                 c_code: row.get(6)?,
                 is_read: row.get(7)?,
+                genre_id: row.get(8)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -111,12 +134,11 @@ fn get_all_books(db: State<DbConnection>) -> Result<Vec<Book>, String> {
     Ok(books)
 }
 
-// 指定されたジャンルの書籍一覧を取得するコマンド (取得項目を増やす)
 #[tauri::command]
 fn get_books_by_genre(genre_id: i64, db: State<DbConnection>) -> Result<Vec<Book>, String> {
     let conn = db.0.lock().unwrap();
     let mut stmt = conn
-        .prepare("SELECT id, isbn, title, author, publisher, price, c_code, is_read FROM books WHERE genre_id = ?1")
+        .prepare("SELECT id, isbn, title, author, publisher, price, c_code, is_read, genre_id FROM books WHERE genre_id = ?1")
         .map_err(|e| e.to_string())?;
     let book_iter = stmt
         .query_map([genre_id], |row| {
@@ -129,6 +151,7 @@ fn get_books_by_genre(genre_id: i64, db: State<DbConnection>) -> Result<Vec<Book
                 price: row.get(5)?,
                 c_code: row.get(6)?,
                 is_read: row.get(7)?,
+                genre_id: row.get(8)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -161,7 +184,7 @@ fn add_book(new_book: NewBook, db: State<DbConnection>) -> Result<Book, String> 
     .map_err(|e| e.to_string())?;
     let id = conn.last_insert_rowid();
     let mut stmt = conn.prepare(
-        "SELECT id, isbn, title, author, publisher, price, c_code, is_read FROM books WHERE id = ?1"
+        "SELECT id, isbn, title, author, publisher, price, c_code, is_read, genre_id FROM books WHERE id = ?1"
     ).map_err(|e| e.to_string())?;
     let book = stmt
         .query_row([id], |row| {
@@ -174,6 +197,7 @@ fn add_book(new_book: NewBook, db: State<DbConnection>) -> Result<Book, String> 
                 price: row.get(5)?,
                 c_code: row.get(6)?,
                 is_read: row.get(7)?,
+                genre_id: row.get(8)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -192,8 +216,9 @@ fn update_book(book: UpdateBook, db: State<DbConnection>) -> Result<Book, String
              publisher = ?4,
              price = ?5,
              c_code = ?6,
-             is_read = ?7
-         WHERE id = ?8",
+             is_read = ?7,
+             genre_id = ?8
+         WHERE id = ?9",
         rusqlite::params![
             book.isbn,
             book.title,
@@ -202,13 +227,14 @@ fn update_book(book: UpdateBook, db: State<DbConnection>) -> Result<Book, String
             book.price,
             book.c_code,
             book.is_read,
+            book.genre_id,
             book.id
         ],
     )
     .map_err(|e| e.to_string())?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, isbn, title, author, publisher, price, c_code, is_read FROM books WHERE id = ?1"
+        "SELECT id, isbn, title, author, publisher, price, c_code, is_read, genre_id FROM books WHERE id = ?1"
     ).map_err(|e| e.to_string())?;
     let updated = stmt
         .query_row([book.id], |row| {
@@ -221,6 +247,7 @@ fn update_book(book: UpdateBook, db: State<DbConnection>) -> Result<Book, String
                 price: row.get(5)?,
                 c_code: row.get(6)?,
                 is_read: row.get(7)?,
+                genre_id: row.get(8)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -287,6 +314,7 @@ fn main() {
             get_all_books,
             add_book,
             update_book,
+            add_genre, // ← 追加
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
