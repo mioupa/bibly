@@ -5,12 +5,13 @@ import { invoke } from '@tauri-apps/api/core';
 import GenreList from './components/GenreList.vue';
 import BookList from './components/BookList.vue';
 import AddBookForm from './components/AddBookForm.vue';
+import SettingsForm from './components/SettingsForm.vue';
 import type { Book } from './types';
 
 const bookList = ref<Book[]>([]);
 const showAddForm = ref(false);
+const showSettings = ref(false);
 
-// サイドバー幅(ドラッグで変更)
 const sidebarWidth = ref(200);
 const isResizing = ref(false);
 const minWidth = 120;
@@ -71,9 +72,16 @@ function closeAddForm() {
   showAddForm.value = false;
 }
 
+function toggleSettings() {
+  showSettings.value = !showSettings.value;
+}
+
+function closeSettings() {
+  showSettings.value = false;
+}
+
 function handleBookAdded(book: Book) {
   bookList.value.unshift(book);
-  // 追加後に自動で閉じたい場合は次行のコメントを外す
   // closeAddForm();
 }
 
@@ -91,9 +99,14 @@ onMounted(() => {
       aria-label="Resize sidebar" />
     <div class="content">
       <div class="toolbar">
-        <button class="btn primary" @click="toggleAddForm">
-          新規＋
-        </button>
+        <div class="toolbar-left">
+          <button class="btn primary" @click="toggleAddForm">
+            新規＋
+          </button>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn" @click="toggleSettings" aria-label="設定">設定</button>
+        </div>
       </div>
 
       <!-- モーダル (Teleport で body 直下へ) -->
@@ -102,6 +115,16 @@ onMounted(() => {
           <div v-if="showAddForm" class="modal-overlay" @click.self="closeAddForm">
             <div class="modal" role="dialog" aria-modal="true">
               <AddBookForm @book-added="handleBookAdded" @close="closeAddForm" />
+            </div>
+          </div>
+        </transition>
+      </teleport>
+
+      <teleport to="body">
+        <transition name="fade">
+          <div v-if="showSettings" class="modal-overlay" @click.self="closeSettings">
+            <div class="modal" role="dialog" aria-modal="true">
+              <SettingsForm @close="closeSettings" />
             </div>
           </div>
         </transition>
@@ -159,10 +182,24 @@ onMounted(() => {
 
 .toolbar {
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid #ddd;
   background: #fafafa;
+}
+
+/* 新規: 左右コンテナと右寄せ */
+.toolbar-left {
+  display: flex;
+  gap: 8px;
+}
+
+.toolbar-right {
+  margin-left: auto;
+  /* これで設定ボタンを右端に寄せる */
+  display: flex;
+  gap: 8px;
 }
 
 /* 統一ボタンスタイル (.btn) */

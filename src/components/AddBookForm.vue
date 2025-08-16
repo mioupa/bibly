@@ -22,6 +22,9 @@ const form = ref<NewBook>({
 });
 const submitting = ref(false);
 const errorMsg = ref('');
+// ← 追加: タブ切替状態（デフォルトは自動入力）
+const mode = ref<'auto' | 'manual'>('auto');
+const isbnInput = ref(''); // 自動入力用 ISBN
 
 onMounted(async () => {
   try {
@@ -73,6 +76,17 @@ async function submit() {
     submitting.value = false;
   }
 }
+
+// ← 追加: ISBN検索用ハンドラ（現状プレースホルダー）
+async function searchByIsbn() {
+  errorMsg.value = '';
+  if (!isbnInput.value.trim()) {
+    errorMsg.value = 'ISBNを入力してください';
+    return;
+  }
+  // 将来的に国会図書館APIやGoogle Booksを呼ぶ実装へ置き換えます
+  errorMsg.value = 'ISBN検索は未実装です（将来的に外部APIを叩きます）';
+}
 </script>
 
 <template>
@@ -81,52 +95,82 @@ async function submit() {
       <strong>書籍追加</strong>
       <button type="button" class="close-btn" @click="emit('close')" aria-label="閉じる">×</button>
     </div>
-    <form class="add-book-form" @submit.prevent="submit">
-      <div class="row">
-        <label>タイトル<span class="req">*</span></label>
-        <input v-model="form.title" required />
-      </div>
-      <div class="row">
-        <label>ジャンル<span class="req">*</span></label>
-        <!-- datalist を使って既存ジャンルを候補表示しつつ自由入力を許可 -->
-        <input v-model="genreName" list="genre-list" required placeholder="ジャンルを選択または入力" />
-        <datalist id="genre-list">
-          <option v-for="g in genres" :key="g.id" :value="g.name" />
-        </datalist>
-      </div>
-      <div class="row">
-        <label>ISBN</label>
-        <input v-model="form.isbn" />
-      </div>
-      <div class="row">
-        <label>著者</label>
-        <input v-model="form.author" />
-      </div>
-      <div class="row">
-        <label>出版社</label>
-        <input v-model="form.publisher" />
-      </div>
-      <!-- Cコードを価格の前へ移動 -->
-      <div class="row">
-        <label>Cコード</label>
-        <input v-model="form.c_code" />
-      </div>
-      <div class="row">
-        <label>価格</label>
-        <input v-model.number="form.price" type="number" min="0" />
-      </div>
-      <div class="row">
-        <label>読了</label>
-        <select v-model="form.is_read">
-          <option :value="0">未</option>
-          <option :value="1">済</option>
-        </select>
-      </div>
-      <div class="actions">
-        <button type="submit" class="btn primary" :disabled="submitting">追加</button>
-        <span class="error" v-if="errorMsg">{{ errorMsg }}</span>
-      </div>
-    </form>
+
+    <!-- タブ -->
+    <div class="tab-bar" role="tablist" aria-label="入力切替">
+      <button type="button" class="tab" :class="{ active: mode === 'auto' }" @click="mode = 'auto'" role="tab"
+        :aria-selected="mode === 'auto'">
+        自動入力 (ISBN)
+      </button>
+      <button type="button" class="tab" :class="{ active: mode === 'manual' }" @click="mode = 'manual'" role="tab"
+        :aria-selected="mode === 'manual'">
+        手動入力
+      </button>
+    </div>
+
+    <!-- 自動入力パネル -->
+    <div v-if="mode === 'auto'" class="auto-panel">
+      <form class="add-book-form" @submit.prevent="searchByIsbn">
+        <div class="row">
+          <label>ISBN<span class="req">*</span></label>
+          <input v-model="isbnInput" placeholder="ISBNを入力" />
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn primary" :disabled="submitting">検索して追加</button>
+          <button type="button" class="btn" @click="emit('close')" :disabled="submitting">キャンセル</button>
+          <span class="error" v-if="errorMsg">{{ errorMsg }}</span>
+        </div>
+      </form>
+    </div>
+
+    <!-- 手動入力パネル（既存フォームを移動） -->
+    <div v-else class="manual-panel">
+      <form class="add-book-form" @submit.prevent="submit">
+        <div class="row">
+          <label>タイトル<span class="req">*</span></label>
+          <input v-model="form.title" required />
+        </div>
+        <div class="row">
+          <label>ジャンル<span class="req">*</span></label>
+          <input v-model="genreName" list="genre-list" required placeholder="ジャンルを選択または入力" />
+          <datalist id="genre-list">
+            <option v-for="g in genres" :key="g.id" :value="g.name" />
+          </datalist>
+        </div>
+        <div class="row">
+          <label>ISBN</label>
+          <input v-model="form.isbn" />
+        </div>
+        <div class="row">
+          <label>著者</label>
+          <input v-model="form.author" />
+        </div>
+        <div class="row">
+          <label>出版社</label>
+          <input v-model="form.publisher" />
+        </div>
+        <div class="row">
+          <label>Cコード</label>
+          <input v-model="form.c_code" />
+        </div>
+        <div class="row">
+          <label>価格</label>
+          <input v-model.number="form.price" type="number" min="0" />
+        </div>
+        <div class="row">
+          <label>読了</label>
+          <select v-model="form.is_read">
+            <option :value="0">未</option>
+            <option :value="1">済</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn primary" :disabled="submitting">追加</button>
+          <button type="button" class="btn" @click="emit('close')" :disabled="submitting">キャンセル</button>
+          <span class="error" v-if="errorMsg">{{ errorMsg }}</span>
+        </div>
+      </form>
+    </div>
   </div>
 </template>
 
@@ -252,4 +296,62 @@ button {
   border: none;
 }
 
+/* タブバー */
+.tab-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 6px 0;
+  margin-bottom: 0;
+  align-items: flex-end;
+  /* 下線 (コンテンツとの境界) */
+  border-bottom: 1px solid #e6e6e6;
+  background: transparent;
+}
+
+/* タブ本体 */
+.tab {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  padding: 8px 12px;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #444;
+  transition: background .12s, color .12s, box-shadow .12s, border-color .12s;
+  margin-bottom: -1px;
+  /* 下線と重ねる */
+}
+
+/* 非アクティブ時のホバー */
+.tab:not(.active):hover {
+  background: #f6f7f8;
+}
+
+/* アクティブタブ: 上に浮いたカード風 */
+.tab.active {
+  background: #fff;
+  border-color: #ddd;
+  border-bottom-color: #fff;
+  /* コンテンツとつながって見えるようにする */
+  color: #111;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  font-weight: 600;
+}
+
+/* タブ用パネル（タブ下のコンテンツをカード風に） */
+.auto-panel,
+.manual-panel {
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-top: none;
+  /* タブとつながるようにする */
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  margin-top: 0;
+}
 </style>
