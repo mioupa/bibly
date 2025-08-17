@@ -10,7 +10,10 @@ export interface Book {
   price?: number;
   c_code?: string;
   is_read: number;
-  genre_id?: number; // ← 追加
+  genre_id?: number | null; // 'null' を追加
+  audience?: string | null;
+  form?: string | null;
+  content?: string | null;
 }
 
 // Genreの型もついでにこちらに移動しておくと、さらに管理しやすくなります
@@ -30,7 +33,6 @@ export interface NewBook {
   is_read?: number; // 省略時 0
 }
 
-// 既存書籍更新用
 export interface UpdateBook {
   id: number;
   title: string;
@@ -40,7 +42,7 @@ export interface UpdateBook {
   price?: number;
   c_code?: string;
   is_read: number;
-  genre_id?: number; // ← 追加
+  genre_id?: number | null; // 'null' を追加
 }
 
 export interface CCodeInterpretation {
