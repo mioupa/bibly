@@ -14,7 +14,6 @@ pub fn setup_database(_app: &tauri::AppHandle) -> Result<Connection, rusqlite::E
         fs::create_dir_all(&data_dir).expect("Failed to create data dir");
     }
     let db_path = data_dir.join("bibly.sqlite");
-    println!("Database (Portable) will be created at: {:?}", db_path);
     let conn = Connection::open(&db_path)?;
     conn.execute_batch(
         "

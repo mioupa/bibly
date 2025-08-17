@@ -1,6 +1,6 @@
 <!-- src/components/BookList.vue -->
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { Book, UpdateBook, Genre } from '../types';
 
@@ -12,14 +12,35 @@ const emit = defineEmits<{
   (e: 'book-deleted', id: number): void
 }>();
 
-const visibleColumns = ref({
-  isbn: true,
+// localStorageから設定を読み込むヘルパー
+function loadFromLocalStorage<T extends object>(key: string, defaultValue: T): T {
+  const saved = localStorage.getItem(key);
+  if (saved) {
+    try {
+      // 保存された設定とデフォルト値をマージして、将来のキー追加に備える
+      return { ...defaultValue, ...JSON.parse(saved) };
+    } catch (e) {
+      console.error(`Failed to parse localStorage item: ${key}`, e);
+      return defaultValue;
+    }
+  }
+  return defaultValue;
+}
+
+const defaultVisibleColumns = {
+  isbn: false, // デフォルトで非表示に
   author: true,
   publisher: true,
   c_code: true,
   price: true,
   is_read: true,
-});
+};
+
+const visibleColumns = ref(loadFromLocalStorage('bibly_visible_columns', defaultVisibleColumns));
+
+watch(visibleColumns, (newValue) => {
+  localStorage.setItem('bibly_visible_columns', JSON.stringify(newValue));
+}, { deep: true });
 
 // ▼ 追加: 列メニュー制御
 const showColumnMenu = ref(false);
@@ -55,15 +76,21 @@ function onClickOutside(e: MouseEvent) {
   }
 }
 
-const columnWidths = ref<Record<string, number>>({
+const defaultColumnWidths: Record<string, number> = {
   title: 240,
   isbn: 130,
   author: 180,
   publisher: 120,
-  c_code: 90,         // ← 追加
+  c_code: 90,
   price: 90,
   is_read: 70,
-});
+};
+
+const columnWidths = ref(loadFromLocalStorage('bibly_column_widths', defaultColumnWidths));
+
+watch(columnWidths, (newValue) => {
+  localStorage.setItem('bibly_column_widths', JSON.stringify(newValue));
+}, { deep: true });
 
 // 可視列の幅合計
 const tableWidth = computed(() => {
@@ -379,7 +406,8 @@ defineExpose({
             <div class="actions">
               <button type="submit" class="btn primary" :disabled="editSubmitting">保存</button>
               <button type="button" class="btn" @click="closeEdit" :disabled="editSubmitting">キャンセル</button>
-              <button type="button" class="btn danger" @click="submitDelete" :disabled="editSubmitting" style="margin-left: auto;">削除</button>
+              <button type="button" class="btn danger" @click="submitDelete" :disabled="editSubmitting"
+                style="margin-left: auto;">削除</button>
               <span class="error" v-if="editError">{{ editError }}</span>
             </div>
           </form>

@@ -1,4 +1,4 @@
-<!-- src/components/GenreList.vue -->
+hi<!-- src/components/GenreList.vue -->
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
