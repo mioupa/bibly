@@ -1,4 +1,4 @@
-hi<!-- src/components/GenreList.vue -->
+<!-- src/components/GenreList.vue -->
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
@@ -8,7 +8,7 @@ import ConfirmModal from './ConfirmModal.vue';
 // 親コンポーネントにイベントを通知するための`defineEmits`
 const emit = defineEmits<{
   (e: 'genre-selected', id: number): void,
-  (e: 'genre-deleted', id: number): void
+  (e: 'genre-deleted', id: number): void,
 }>();
 
 const selectedGenreId = ref<number>(-1); // 初期選択は「すべて表示」
@@ -20,16 +20,15 @@ const isEditMode = ref(false);
 // 削除確認モーダルの状態
 const showDeleteConfirm = ref(false);
 const deletingGenre = ref<Genre | null>(null);
-const deleteError = ref('');
-const deleteSubmitting = ref(false);
 const bookCount = ref(0);
+const deleteSubmitting = ref(false);
+const deleteError = ref('');
 
 function toggleEditMode() {
   isEditMode.value = !isEditMode.value;
 }
 
 async function requestDelete(genre: Genre) {
-  deleteError.value = '';
   try {
     bookCount.value = await invoke<number>('get_book_count_by_genre', { genreId: genre.id });
     deletingGenre.value = genre;
@@ -41,22 +40,22 @@ async function requestDelete(genre: Genre) {
 }
 
 async function handleDeleteConfirm() {
-  if (!deletingGenre.value || deleteSubmitting.value) return;
+  if (!deletingGenre.value) return;
 
   deleteSubmitting.value = true;
   deleteError.value = '';
   try {
-    await invoke('delete_genre', { genreId: deletingGenre.value.id });
+    await invoke('delete_genre', { id: deletingGenre.value.id });
+    emit('genre-deleted', deletingGenre.value.id);
+    // ローカルのリストからも削除
     const index = genreList.value.findIndex(g => g.id === deletingGenre.value!.id);
     if (index !== -1) {
       genreList.value.splice(index, 1);
-      emit('genre-deleted', deletingGenre.value!.id);
     }
-    showDeleteConfirm.value = false;
-    deletingGenre.value = null;
+    handleDeleteCancel();
   } catch (e) {
     console.error('Failed to delete genre:', e);
-    deleteError.value = 'ジャンルの削除に失敗しました。';
+    deleteError.value = '削除に失敗しました。'
   } finally {
     deleteSubmitting.value = false;
   }
@@ -64,13 +63,16 @@ async function handleDeleteConfirm() {
 
 function handleDeleteCancel() {
   showDeleteConfirm.value = false;
+  deletingGenre.value = null;
+  bookCount.value = 0;
+  deleteSubmitting.value = false;
+  deleteError.value = '';
 }
 
 // ジャンルがクリックされたときに呼ばれる関数
 function selectGenre(genreId: number) {
   if (isEditMode.value) return;
 
-  // 何度クリックしてもそのジャンルが選択されるようにする
   if (selectedGenreId.value !== genreId) {
     selectedGenreId.value = genreId;
   }
@@ -89,7 +91,6 @@ function handleKeyDown(e: KeyboardEvent) {
 
 async function fetchGenres() {
   try {
-    // Rustのget_genresコマンドを呼び出し、結果をgenreListに入れる
     genreList.value = await invoke('get_genres');
   } catch (e) {
     console.error('Failed to fetch genres:', e);
@@ -136,35 +137,33 @@ defineExpose({
         </button>
       </li>
     </ul>
-  </div>
 
-  <ConfirmModal
-    :show="showDeleteConfirm"
-    title="ジャンル削除の確認"
-    :submitting="deleteSubmitting"
-    @confirm="handleDeleteConfirm"
-    @cancel="handleDeleteCancel"
-  >
-    <div v-if="deletingGenre">
-      <p>
-        「<strong>{{ deletingGenre.name }}</strong>」を削除しますか？<br>
-        このジャンルには <strong>{{ bookCount }}</strong> 冊の書籍が登録されています。<br>
-        削除後、これらの書籍は「未分類」になります。
-      </p>
-      <span class="error" v-if="deleteError">{{ deleteError }}</span>
-    </div>
-  </ConfirmModal>
+    <ConfirmModal
+      :show="showDeleteConfirm"
+      title="ジャンル削除の確認"
+      :submitting="deleteSubmitting"
+      @confirm="handleDeleteConfirm"
+      @cancel="handleDeleteCancel"
+    >
+      <div v-if="deletingGenre">
+        <p>
+          「<strong>{{ deletingGenre.name }}</strong>」を削除しますか？<br>
+          このジャンルには <strong>{{ bookCount }}</strong> 冊の書籍が登録されています。<br>
+          削除後、これらの書籍は「未分類」になります。
+        </p>
+        <span class="error" v-if="deleteError">{{ deleteError }}</span>
+      </div>
+    </ConfirmModal>
+  </div>
 
 </template>
 
 <style scoped>
 .genre-list-container {
   padding: 1em;
-  /* width は親(App.vue)で制御するため削除 */
   height: 100%;
   box-sizing: border-box;
   overflow-y: auto;
-  /* 背景色は親と揃える (必要なら残す) */
   background-color: #f0f0f0;
 }
 
@@ -249,5 +248,9 @@ li.selected:hover {
   color: #d32f2f;
 }
 
-
+.error {
+    color: #d32f2f;
+    font-size: 13px;
+    margin-top: 8px;
+}
 </style>

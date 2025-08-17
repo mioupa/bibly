@@ -3,7 +3,7 @@
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { Book, UpdateBook, Genre } from '../types';
-import ConfirmModal from './ConfirmModal.vue';
+import ConfirmModal from './ConfirmModal.vue'; // 削除確認モーダルをインポート
 
 const props = defineProps<{
   books: Book[]
@@ -321,7 +321,7 @@ async function submitEdit() {
       Object.assign(props.books[idx], updated);
     }
     emit('book-updated');
-    closeEdit(); // ← これで正常に閉じる
+    closeEdit();
   } catch (e) {
     console.error(e);
     editError.value = '更新に失敗しました';
@@ -330,37 +330,34 @@ async function submitEdit() {
   }
 }
 
-const showDeleteConfirm = ref(false);
+// ===== 削除確認モーダル状態 =====
+const showConfirmDelete = ref(false);
+const bookToDelete = ref<Book | null>(null);
 
 function requestDelete() {
   if (!editForm.value) return;
-  editError.value = ''; // エラーメッセージをクリア
-  showDeleteConfirm.value = true;
+  bookToDelete.value = editForm.value as Book;
+  showConfirmDelete.value = true;
 }
 
-async function handleDeleteConfirm() {
-  if (!editForm.value || editSubmitting.value) return;
-
-  editSubmitting.value = true;
-  editError.value = '';
+async function confirmDelete() {
+  if (!bookToDelete.value) return;
   try {
-    await invoke('delete_book', { id: editForm.value.id });
-    emit('book-deleted', editForm.value.id);
-    showDeleteConfirm.value = false;
-    closeEdit();
+    await invoke('delete_book', { id: bookToDelete.value.id });
+    emit('book-deleted', bookToDelete.value.id);
   } catch (e) {
-    console.error(e);
-    editError.value = '削除に失敗しました';
-    // エラーが発生しても確認モーダルは閉じる
-    showDeleteConfirm.value = false;
+    console.error('Failed to delete book:', e);
+    // ここでユーザーにエラー通知を表示することもできる
   } finally {
-    editSubmitting.value = false;
+    cancelDelete();
   }
 }
 
-function handleDeleteCancel() {
-  showDeleteConfirm.value = false;
+function cancelDelete() {
+  showConfirmDelete.value = false;
+  bookToDelete.value = null;
 }
+
 
 // 編集時にジャンル名を確保してIDを返す（AddBookForm と同様）
 async function ensureGenreIdForEdit(name: string): Promise<number> {
@@ -576,19 +573,19 @@ defineExpose({
         </div>
       </div>
     </transition>
-
-    <ConfirmModal
-      :show="showDeleteConfirm"
-      title="削除の確認"
-      :submitting="editSubmitting"
-      @confirm="handleDeleteConfirm"
-      @cancel="handleDeleteCancel"
-    >
-      <p>この書籍を本当に削除しますか？<br>この操作は取り消せません。</p>
-      <span class="error" v-if="editError">{{ editError }}</span>
-    </ConfirmModal>
-
   </teleport>
+
+  <!-- 削除確認モーダル -->
+  <ConfirmModal
+    :show="showConfirmDelete"
+    title="書籍の削除"
+    @confirm="confirmDelete"
+    @cancel="cancelDelete"
+  >
+    <p v-if="bookToDelete">書籍「<strong>{{ bookToDelete.title }}</strong>」を削除しますか？</p>
+    <p>この操作は元に戻せません。</p>
+  </ConfirmModal>
+
 </template>
 
 <style scoped>

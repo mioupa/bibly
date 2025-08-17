@@ -7,28 +7,29 @@ defineProps<{
   submitting?: boolean;
 }>();
 
-defineEmits<['confirm', 'cancel']>();
+defineEmits<{
+  (e: 'confirm'): void;
+  (e: 'cancel'): void;
+}>();
 </script>
 
 <template>
-  <teleport to="body">
-    <transition name="fade">
-      <div v-if="show" class="confirm-modal-overlay" @click.self="$emit('cancel')">
-        <div class="confirm-modal" role="dialog" aria-modal="true">
-          <div class="modal-header">
-            <strong>{{ title || '確認' }}</strong>
-          </div>
-          <div class="modal-body">
-            <slot>本当に実行しますか？</slot>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn danger" @click="$emit('confirm')" :disabled="submitting">はい</button>
-            <button type="button" class="btn" @click="$emit('cancel')" :disabled="submitting">キャンセル</button>
-          </div>
+  <transition name="fade">
+    <div v-if="show" class="confirm-modal-overlay" @click.self="$emit('cancel')">
+      <div class="confirm-modal" role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <strong>{{ title || '確認' }}</strong>
+        </div>
+        <div class="modal-body">
+          <slot>本当に実行しますか？</slot>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn danger" @click="$emit('confirm')" :disabled="submitting">はい</button>
+          <button type="button" class="btn" @click="$emit('cancel')" :disabled="submitting">キャンセル</button>
         </div>
       </div>
-    </transition>
-  </teleport>
+    </div>
+  </transition>
 </template>
 
 <style scoped>
@@ -36,10 +37,9 @@ defineEmits<['confirm', 'cancel']>();
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, .35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1200;
+  display: grid;
+  place-items: center;
+  z-index: 1300;
 }
 
 .confirm-modal {
