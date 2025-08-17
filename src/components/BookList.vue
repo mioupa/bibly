@@ -212,22 +212,29 @@ async function submitEdit() {
   }
 }
 
-async function submitDelete() {
-  if (!editForm.value) return;
+const showDeleteConfirm = ref(false);
 
-  if (!confirm('この書籍を本当に削除しますか？')) {
-    return;
-  }
+function requestDelete() {
+  if (!editForm.value) return;
+  editError.value = ''; // エラーメッセージをクリア
+  showDeleteConfirm.value = true;
+}
+
+async function confirmDelete() {
+  if (!editForm.value) return;
 
   editSubmitting.value = true;
   editError.value = '';
   try {
     await invoke('delete_book', { id: editForm.value.id });
     emit('book-deleted', editForm.value.id);
+    showDeleteConfirm.value = false;
     closeEdit();
   } catch (e) {
     console.error(e);
     editError.value = '削除に失敗しました';
+    // エラーが発生しても確認モーダルは閉じる
+    showDeleteConfirm.value = false;
   } finally {
     editSubmitting.value = false;
   }
@@ -406,7 +413,7 @@ defineExpose({
             <div class="actions">
               <button type="submit" class="btn primary" :disabled="editSubmitting">保存</button>
               <button type="button" class="btn" @click="closeEdit" :disabled="editSubmitting">キャンセル</button>
-              <button type="button" class="btn danger" @click="submitDelete" :disabled="editSubmitting"
+              <button type="button" class="btn danger" @click="requestDelete" :disabled="editSubmitting"
                 style="margin-left: auto;">削除</button>
               <span class="error" v-if="editError">{{ editError }}</span>
             </div>
@@ -414,6 +421,26 @@ defineExpose({
         </div>
       </div>
     </transition>
+
+    <!-- 削除確認モーダル -->
+    <transition name="fade">
+      <div v-if="showDeleteConfirm" class="overlay">
+        <div class="modal" role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <strong>削除の確認</strong>
+          </div>
+          <div class="modal-body">
+            <p>この書籍を本当に削除しますか？<br>この操作は取り消せません。</p>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn danger" @click="confirmDelete" :disabled="editSubmitting">はい、削除します</button>
+            <button type="button" class="btn" @click="showDeleteConfirm = false" :disabled="editSubmitting">キャンセル</button>
+            <span class="error" v-if="editError">{{ editError }}</span>
+          </div>
+        </div>
+      </div>
+    </transition>
+
   </teleport>
 </template>
 
@@ -533,7 +560,7 @@ tbody tr:hover {
   background: #fff;
   border-radius: 6px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
-  width: 660px;
+  width: 680px; /* 少し広げる */
   max-width: 90%;
   animation: popup .18s ease;
   font-size: 13px;
@@ -562,10 +589,10 @@ tbody tr:hover {
 }
 
 .edit-form {
-  padding: 12px 14px 16px;
+  padding: 16px 20px; /* パディングを調整 */
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px; /* gapを調整 */
 }
 
 .grid {
@@ -613,8 +640,14 @@ tbody tr:hover {
 
 .actions {
   display: flex;
-  gap: 12px;
+  gap: 10px; /* ボタン間のgapを少し詰める */
   align-items: center;
+  padding: 8px 20px 12px; /* パディングを調整 */
+  background-color: #f7f7f7;
+  border-top: 1px solid #eee;
+  margin: 0 -20px -16px; /* フォームのpaddingに合わせる */
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
 }
 
 .actions button {
@@ -676,6 +709,53 @@ tbody tr:hover {
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity .18s ease;
+}
+
+/* --- 汎用モーダルスタイル --- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+  width: 420px;
+  max-width: 90%;
+  animation: popup .18s ease;
+}
+
+.modal-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid #eee;
+  font-size: 14px;
+}
+
+.modal-body {
+  padding: 16px 14px;
+  font-size: 14px;
+}
+
+.modal-body p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 14px 12px;
+  background-color: #f7f7f7;
+  border-top: 1px solid #eee;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
 }
 
 @keyframes popup {
