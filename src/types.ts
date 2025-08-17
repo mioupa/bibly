@@ -24,7 +24,7 @@ export interface Genre {
 
 export interface NewBook {
   title: string;
-  genre_id: number;
+  genre_id: number | null;
   isbn?: string;
   author?: string;
   publisher?: string;

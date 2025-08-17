@@ -10,6 +10,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'book-deleted', id: number): void
+  (e: 'genre-added', genre: Genre): void
 }>();
 
 // localStorageから設定を読み込むヘルパー
@@ -161,6 +162,22 @@ const editing = ref(false);
 const editSubmitting = ref(false);
 const editError = ref('');
 const editForm = ref<UpdateBook | null>(null);
+const isEditDropdownOpen = ref(false);
+
+function toggleEditDropdown() {
+  isEditDropdownOpen.value = !isEditDropdownOpen.value;
+}
+
+function closeEditDropdown() {
+  setTimeout(() => {
+    isEditDropdownOpen.value = false;
+  }, 200);
+}
+
+function selectEditGenre(genre: Genre) {
+  editGenreName.value = genre.name;
+  isEditDropdownOpen.value = false;
+}
 
 function openEdit(book: Book) {
   editError.value = '';
@@ -246,6 +263,7 @@ async function ensureGenreIdForEdit(name: string): Promise<number> {
   if (found) return found.id;
   const newGenre = await invoke<Genre>('add_genre', { name });
   genres.value.push(newGenre);
+  emit('genre-added', newGenre);
   return newGenre.id;
 }
 
@@ -382,10 +400,17 @@ defineExpose({
 
               <!-- ここにジャンル入力を追加 -->
               <label>ジャンル
-                <input v-model="editGenreName" list="edit-genre-list" />
-                <datalist id="edit-genre-list">
-                  <option v-for="g in genres" :key="g.id" :value="g.name" />
-                </datalist>
+                <div class="genre-input-wrapper">
+                  <input v-model="editGenreName" @blur="closeEditDropdown" placeholder="ジャンルを選択または入力" />
+                  <button type="button" class="dropdown-arrow" @click.stop="toggleEditDropdown" tabindex="-1">▼</button>
+                  <div v-if="isEditDropdownOpen" class="dropdown-list">
+                    <ul>
+                      <li v-for="g in genres" :key="g.id" @mousedown.prevent="selectEditGenre(g)">
+                        {{ g.name }}
+                      </li>
+                    </ul>
+                  </div>
+                </div>
               </label>
 
               <label>ISBN
@@ -617,6 +642,74 @@ tbody tr:hover {
   border-radius: 4px;
 }
 
+/* ▼ 編集モーダル内のカスタムプルダウン用スタイル */
+.genre-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.genre-input-wrapper input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dropdown-arrow {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 28px;
+  padding: 0;
+  border: none;
+  background: #f0f0f0;
+  cursor: pointer;
+  border-top-right-radius: 3px;
+  border-bottom-right-radius: 3px;
+  border-left: 1px solid #bbb;
+  font-size: 10px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dropdown-arrow:hover {
+  background: #e8e8e8;
+}
+
+.dropdown-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.dropdown-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dropdown-list li {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  /* labelのfont-weightを継承しないように */
+  font-weight: normal;
+}
+
+.dropdown-list li:hover {
+  background: #f0f0f0;
+}
+
 .req {
   color: #d00;
   margin-left: 4px;
@@ -770,9 +863,7 @@ tbody tr:hover {
   }
 }
 
-tbody tr:nth-child(even) {
-  background-color: #f9f9f9;
-}
+
 
 thead {
   background-color: #f2f2f2;

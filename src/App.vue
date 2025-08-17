@@ -151,7 +151,7 @@ onMounted(() => {
         </transition>
       </teleport>
 
-      <BookList ref="bookListRef" :books="bookList" @book-deleted="handleBookDeleted" />
+      <BookList ref="bookListRef" :books="bookList" @book-deleted="handleBookDeleted" @genre-added="handleGenreAdded" />
     </div>
   </main>
 </template>
