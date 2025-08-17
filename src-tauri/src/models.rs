@@ -43,3 +43,10 @@ pub struct UpdateBook {
     pub is_read: i64,
     pub genre_id: Option<i64>,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BookInfoFromApi {
+    pub title: String,
+    pub author: String,
+    pub publisher: String,
+}

@@ -49,3 +49,10 @@ export interface CCodeInterpretation {
   form?: string | null;
   content?: string | null;
 }
+
+// APIから取得した書籍情報を表す型
+export interface BookInfoFromApi {
+  title: string;
+  author: string;
+  publisher: string;
+}

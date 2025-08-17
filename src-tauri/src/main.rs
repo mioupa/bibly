@@ -23,6 +23,7 @@ fn main() {
             commands::add_book,
             commands::update_book,
             commands::add_genre,
+            commands::fetch_book_info_from_ndl,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import type { Genre, NewBook, Book } from '../types';
+import type { Genre, NewBook, Book, BookInfoFromApi } from '../types';
 
 const emit = defineEmits<{
   (e: 'book-added', book: Book): void
@@ -9,7 +9,7 @@ const emit = defineEmits<{
 }>();
 
 const genres = ref<Genre[]>([]);
-const genreName = ref(''); // ← 入力可能なジャンル名を保持
+const genreName = ref('');
 const form = ref<NewBook>({
   title: '',
   genre_id: -1,
@@ -21,22 +21,22 @@ const form = ref<NewBook>({
   is_read: 0,
 });
 const submitting = ref(false);
+const searching = ref(false); // API検索中の状態
 const errorMsg = ref('');
-// ← 追加: タブ切替状態（デフォルトは自動入力）
 const mode = ref<'auto' | 'manual'>('auto');
-const isbnInput = ref(''); // 自動入力用 ISBN
+const isbnInput = ref('');
 
 onMounted(async () => {
   try {
     genres.value = await invoke<Genre[]>('get_genres');
-    // 新規登録時はデフォルトで空欄にする（ユーザーが選択または入力）
-    // 以前の実装で先頭ジャンルを自動セットしていた処理を削除しました
+    if (genres.value.length > 0) {
+      genreName.value = genres.value[0].name; // デフォルトジャンルを設定
+    }
   } catch (e) {
     errorMsg.value = 'ジャンル取得に失敗しました';
   }
 });
 
-// ジャンル名からIDを確実に取得。無ければ add_genre を呼んで作成して返す
 async function ensureGenreId(name: string): Promise<number> {
   const found = genres.value.find(g => g.name === name);
   if (found) return found.id;
@@ -59,7 +59,7 @@ async function submit() {
     };
     const book = await invoke<Book>('add_book', { newBook: payload });
     emit('book-added', book);
-    // 初期化
+    // フォームをリセット
     form.value.title = '';
     form.value.isbn = '';
     form.value.author = '';
@@ -67,8 +67,8 @@ async function submit() {
     form.value.price = undefined;
     form.value.is_read = 0;
     form.value.c_code = '';
-    // ジャンルは初期値を維持（先頭に戻す）
-    if (genres.value.length) genreName.value = genres.value[0].name;
+    isbnInput.value = ''; // ISBN入力欄もリセット
+    mode.value = 'auto'; // 自動入力タブに戻す
   } catch (e) {
     errorMsg.value = '登録に失敗しました';
     console.error(e);
@@ -77,15 +77,31 @@ async function submit() {
   }
 }
 
-// ← 追加: ISBN検索用ハンドラ（現状プレースホルダー）
+// NDL APIを呼び出すように修正
 async function searchByIsbn() {
   errorMsg.value = '';
   if (!isbnInput.value.trim()) {
     errorMsg.value = 'ISBNを入力してください';
     return;
   }
-  // 将来的に国会図書館APIやGoogle Booksを呼ぶ実装へ置き換えます
-  errorMsg.value = 'ISBN検索は未実装です（将来的に外部APIを叩きます）';
+  searching.value = true;
+  try {
+    const result = await invoke<BookInfoFromApi>('fetch_book_info_from_ndl', {
+      isbn: isbnInput.value.trim(),
+    });
+    // 取得した情報をフォームにセット
+    form.value.title = result.title;
+    form.value.author = result.author;
+    form.value.publisher = result.publisher;
+    form.value.isbn = isbnInput.value.trim();
+    // 手動入力タブに切り替えてユーザーに確認させる
+    mode.value = 'manual';
+  } catch (e) {
+    errorMsg.value = `書籍情報の取得に失敗しました: ${e}`;
+    console.error(e);
+  } finally {
+    searching.value = false;
+  }
 }
 </script>
 
@@ -116,7 +132,9 @@ async function searchByIsbn() {
           <input v-model="isbnInput" placeholder="ISBNを入力" />
         </div>
         <div class="actions">
-          <button type="submit" class="btn primary" :disabled="submitting">検索して追加</button>
+          <button type="submit" class="btn primary" :disabled="searching || !isbnInput.trim()">
+            {{ searching ? '検索中...' : '検索して追加' }}
+          </button>
           <button type="button" class="btn" @click="emit('close')" :disabled="submitting">キャンセル</button>
           <span class="error" v-if="errorMsg">{{ errorMsg }}</span>
         </div>
