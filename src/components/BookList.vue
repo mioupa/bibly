@@ -8,6 +8,10 @@ const props = defineProps<{
   books: Book[]
 }>();
 
+const emit = defineEmits<{
+  (e: 'book-deleted', id: number): void
+}>();
+
 const visibleColumns = ref({
   isbn: true,
   author: true,
@@ -55,7 +59,7 @@ const columnWidths = ref<Record<string, number>>({
   title: 240,
   isbn: 130,
   author: 180,
-  publisher: 180,
+  publisher: 120,
   c_code: 90,         // ← 追加
   price: 90,
   is_read: 70,
@@ -181,6 +185,27 @@ async function submitEdit() {
   }
 }
 
+async function submitDelete() {
+  if (!editForm.value) return;
+
+  if (!confirm('この書籍を本当に削除しますか？')) {
+    return;
+  }
+
+  editSubmitting.value = true;
+  editError.value = '';
+  try {
+    await invoke('delete_book', { id: editForm.value.id });
+    emit('book-deleted', editForm.value.id);
+    closeEdit();
+  } catch (e) {
+    console.error(e);
+    editError.value = '削除に失敗しました';
+  } finally {
+    editSubmitting.value = false;
+  }
+}
+
 // 編集時にジャンル名を確保してIDを返す（AddBookForm と同様）
 async function ensureGenreIdForEdit(name: string): Promise<number> {
   const found = genres.value.find(g => g.name === name);
@@ -189,6 +214,15 @@ async function ensureGenreIdForEdit(name: string): Promise<number> {
   genres.value.push(newGenre);
   return newGenre.id;
 }
+
+defineExpose({
+  removeGenreFromList(genreId: number) {
+    const index = genres.value.findIndex(g => g.id === genreId);
+    if (index !== -1) {
+      genres.value.splice(index, 1);
+    }
+  }
+});
 </script>
 
 <template>
@@ -345,6 +379,7 @@ async function ensureGenreIdForEdit(name: string): Promise<number> {
             <div class="actions">
               <button type="submit" class="btn primary" :disabled="editSubmitting">保存</button>
               <button type="button" class="btn" @click="closeEdit" :disabled="editSubmitting">キャンセル</button>
+              <button type="button" class="btn danger" @click="submitDelete" :disabled="editSubmitting" style="margin-left: auto;">削除</button>
               <span class="error" v-if="editError">{{ editError }}</span>
             </div>
           </form>
@@ -588,6 +623,16 @@ tbody tr:hover {
 
 .btn.primary:hover:not(:disabled) {
   background: #1565c0;
+}
+
+.btn.danger {
+  background-color: #d32f2f;
+  color: white;
+  border-color: #c62828;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background-color: #c62828;
 }
 
 .error {

@@ -98,6 +98,26 @@ pub fn update_book(book: UpdateBook, db: State<DbConnection>) -> Result<Book, St
     }
 }
 
+#[tauri::command]
+pub fn delete_book(id: i64, db: State<DbConnection>) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    crate::db::delete_book(&conn, id)
+        .map(|_| ()) // 成功したら usize を () に変換
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_book_count_by_genre(genre_id: i64, db: State<DbConnection>) -> Result<i64, String> {
+    let conn = db.0.lock().unwrap();
+    let mut stmt = conn
+        .prepare("SELECT COUNT(*) FROM books WHERE genre_id = ?1")
+        .map_err(|e| e.to_string())?;
+    let count: i64 = stmt
+        .query_row([genre_id], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    Ok(count)
+}
+
 fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
     Ok(Book {
         id: row.get(0)?,

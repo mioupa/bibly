@@ -6,10 +6,37 @@ import { invoke } from '@tauri-apps/api/core';
 import type { Genre } from '../types';
 
 // 親コンポーネントにイベントを通知するための`defineEmits`
-const emit = defineEmits(['genre-selected']);
+const emit = defineEmits<{
+  (e: 'genre-selected', id: number): void,
+  (e: 'genre-deleted', id: number): void
+}>();
 
 // ジャンルのリストを保持するためのリアクティブな変数
 const genreList = ref<Genre[]>([]);
+const isEditMode = ref(false);
+
+function toggleEditMode() {
+  isEditMode.value = !isEditMode.value;
+}
+
+async function confirmDeleteGenre(genre: Genre) {
+  try {
+    const count = await invoke<number>('get_book_count_by_genre', { genreId: genre.id });
+    const confirmMsg = `このジャンルには${count}冊が登録されています。本当に削除しますか？\n削除された書籍のジャンルは未分類になります。`;
+    if (window.confirm(confirmMsg)) {
+      await invoke('delete_genre', { genreId: genre.id });
+      // UIから削除
+      const index = genreList.value.findIndex(g => g.id === genre.id);
+      if (index !== -1) {
+        genreList.value.splice(index, 1);
+        emit('genre-deleted', genre.id);
+      }
+    }
+  } catch (e) {
+    console.error('Failed to delete genre:', e);
+    alert('ジャンルの削除に失敗しました。');
+  }
+}
 
 // ジャンルがクリックされたときに呼ばれる関数
 function selectGenre(genreId: number) {
@@ -26,19 +53,35 @@ onMounted(async () => {
     console.error('Failed to fetch genres:', e);
   }
 });
+
+// 親から呼び出せるように、新しいジャンルを追加するメソッドを公開
+function addNewGenre(genre: Genre) {
+  genreList.value.push(genre);
+}
+defineExpose({
+  addNewGenre,
+});
 </script>
 
 <template>
   <div class="genre-list-container">
-    <h2>ジャンル一覧</h2>
+    <div class="list-header">
+      <h2>ジャンル一覧</h2>
+      <button @click="toggleEditMode" class="edit-btn">
+        {{ isEditMode ? '完了' : '編集' }}
+      </button>
+    </div>
     <ul>
       <!-- 「すべて表示」の項目を固定で追加 -->
       <!-- クリックされたら、特別なIDとして-1を送る -->
-      <li @click="selectGenre(-1)">すべて表示</li>
+      <li @click="!isEditMode && selectGenre(-1)" :class="{ 'item-disabled': isEditMode }">すべて表示</li>
       
       <!-- genreListの内容を元にリストを動的に描画する -->
-      <li v-for="genre in genreList" :key="genre.id" @click="selectGenre(genre.id)">
-        {{ genre.name }}
+      <li v-for="genre in genreList" :key="genre.id" @click="!isEditMode && selectGenre(genre.id)" :class="{ 'item-disabled': isEditMode }">
+        <span>{{ genre.name }}</span>
+        <button v-if="isEditMode" @click.stop="confirmDeleteGenre(genre)" class="delete-btn">
+          🗑️
+        </button>
       </li>
     </ul>
   </div>
@@ -55,11 +98,69 @@ onMounted(async () => {
   background-color: #f0f0f0;
 }
 
-li {
-  cursor: pointer;
-  padding: 4px 0;
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5em;
 }
+
+h2 {
+  margin: 0;
+  font-size: 1.2em;
+}
+
+.edit-btn {
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+
+.edit-btn:hover {
+  background: #e0e0e0;
+}
+
+li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 6px 4px;
+  border-radius: 4px;
+  transition: background .12s;
+}
+
 li:hover {
-  font-weight: bold;
+  background: #e0e0e0;
+}
+
+li.item-disabled {
+  cursor: default;
+  color: #888;
+}
+
+li.item-disabled:hover {
+  background: none;
+  font-weight: normal;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 16px;
+  opacity: 0.6;
+  line-height: 1;
+  transition: opacity .12s, color .12s;
+}
+
+.delete-btn:hover {
+  opacity: 1;
+  color: #d32f2f;
 }
 </style>

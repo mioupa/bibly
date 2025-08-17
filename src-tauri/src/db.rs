@@ -38,3 +38,20 @@ pub fn setup_database(_app: &tauri::AppHandle) -> Result<Connection, rusqlite::E
     )?;
     Ok(conn)
 }
+
+pub fn delete_book(conn: &Connection, id: i64) -> Result<usize, rusqlite::Error> {
+    let affected_rows = conn.execute("DELETE FROM books WHERE id = ?", [id])?;
+    Ok(affected_rows)
+}
+
+pub fn delete_genre_and_unassign_books(conn: &mut Connection, genre_id: i64) -> Result<(), rusqlite::Error> {
+    let tx = conn.transaction()?;
+
+    // 1. Unassign books from the genre
+    tx.execute("UPDATE books SET genre_id = NULL WHERE genre_id = ?", [genre_id])?;
+
+    // 2. Delete the genre
+    tx.execute("DELETE FROM genres WHERE id = ?", [genre_id])?;
+
+    tx.commit()
+}

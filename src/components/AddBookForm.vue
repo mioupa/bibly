@@ -5,6 +5,7 @@ import type { Genre, NewBook, Book, BookInfoFromApi } from '../types';
 
 const emit = defineEmits<{
   (e: 'book-added', book: Book): void
+  (e: 'genre-added', genre: Genre): void
   (e: 'close'): void
 }>();
 
@@ -30,7 +31,7 @@ onMounted(async () => {
   try {
     genres.value = await invoke<Genre[]>('get_genres');
     if (genres.value.length > 0) {
-      genreName.value = genres.value[0].name; // デフォルトジャンルを設定
+      // genreName.value = genres.value[0].name; // デフォルトジャンルを設定
     }
   } catch (e) {
     errorMsg.value = 'ジャンル取得に失敗しました';
@@ -42,6 +43,7 @@ async function ensureGenreId(name: string): Promise<number> {
   if (found) return found.id;
   const newGenre = await invoke<Genre>('add_genre', { name });
   genres.value.push(newGenre);
+  emit('genre-added', newGenre); // 新ジャンル追加を通知
   return newGenre.id;
 }
 

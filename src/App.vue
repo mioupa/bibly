@@ -6,8 +6,10 @@ import GenreList from './components/GenreList.vue';
 import BookList from './components/BookList.vue';
 import AddBookForm from './components/AddBookForm.vue';
 import SettingsForm from './components/SettingsForm.vue';
-import type { Book } from './types';
+import type { Book, Genre } from './types';
 
+const genreListRef = ref<InstanceType<typeof GenreList> | null>(null);
+const bookListRef = ref<InstanceType<typeof BookList> | null>(null);
 const bookList = ref<Book[]>([]);
 const showAddForm = ref(false);
 const showSettings = ref(false);
@@ -85,6 +87,25 @@ function handleBookAdded(book: Book) {
   // closeAddForm();
 }
 
+function handleGenreAdded(genre: Genre) {
+  genreListRef.value?.addNewGenre(genre);
+}
+
+function handleBookDeleted(id: number) {
+  bookList.value = bookList.value.filter(book => book.id !== id);
+}
+
+function handleGenreDeleted(genreId: number) {
+  // 書籍リスト内の該当ジャンルをnullにする
+  bookList.value.forEach(book => {
+    if (book.genre_id === genreId) {
+      book.genre_id = null;
+    }
+  });
+  // BookListコンポーネントが持つジャンルリストからも削除する
+  bookListRef.value?.removeGenreFromList(genreId);
+}
+
 onMounted(() => {
   fetchAllBooks();
 });
@@ -93,7 +114,7 @@ onMounted(() => {
 <template>
   <main class="main-container" :class="{ 'resizing': isResizing }">
     <div class="sidebar" :style="{ width: sidebarWidth + 'px' }">
-      <GenreList @genre-selected="handleGenreSelected" />
+      <GenreList ref="genreListRef" @genre-selected="handleGenreSelected" @genre-deleted="handleGenreDeleted" />
     </div>
     <div class="resize-handle" @mousedown="onMouseDownHandle" :class="{ active: isResizing }"
       aria-label="Resize sidebar" />
@@ -114,7 +135,7 @@ onMounted(() => {
         <transition name="fade">
           <div v-if="showAddForm" class="modal-overlay" @click.self="closeAddForm">
             <div class="modal" role="dialog" aria-modal="true">
-              <AddBookForm @book-added="handleBookAdded" @close="closeAddForm" />
+              <AddBookForm @book-added="handleBookAdded" @genre-added="handleGenreAdded" @close="closeAddForm" />
             </div>
           </div>
         </transition>
@@ -130,7 +151,7 @@ onMounted(() => {
         </transition>
       </teleport>
 
-      <BookList :books="bookList" />
+      <BookList ref="bookListRef" :books="bookList" @book-deleted="handleBookDeleted" />
     </div>
   </main>
 </template>
