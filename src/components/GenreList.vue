@@ -1,15 +1,17 @@
 hi<!-- src/components/GenreList.vue -->
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-// ★★★ types.tsからGenreの型をインポート ★★★
 import type { Genre } from '../types';
+import ConfirmModal from './ConfirmModal.vue';
 
 // 親コンポーネントにイベントを通知するための`defineEmits`
 const emit = defineEmits<{
   (e: 'genre-selected', id: number): void,
   (e: 'genre-deleted', id: number): void
 }>();
+
+const selectedGenreId = ref<number>(-1); // 初期選択は「すべて表示」
 
 // ジャンルのリストを保持するためのリアクティブな変数
 const genreList = ref<Genre[]>([]);
@@ -38,8 +40,8 @@ async function requestDelete(genre: Genre) {
   }
 }
 
-async function confirmDelete() {
-  if (!deletingGenre.value) return;
+async function handleDeleteConfirm() {
+  if (!deletingGenre.value || deleteSubmitting.value) return;
 
   deleteSubmitting.value = true;
   deleteError.value = '';
@@ -60,20 +62,48 @@ async function confirmDelete() {
   }
 }
 
-// ジャンルがクリックされたときに呼ばれる関数
-function selectGenre(genreId: number) {
-  // 'genre-selected'という名前で、選択されたジャンルのIDを親に通知
-  emit('genre-selected', genreId);
+function handleDeleteCancel() {
+  showDeleteConfirm.value = false;
 }
 
-// コンポーネントがマウントされたら、データを取得する
-onMounted(async () => {
+// ジャンルがクリックされたときに呼ばれる関数
+function selectGenre(genreId: number) {
+  if (isEditMode.value) return;
+
+  // 何度クリックしてもそのジャンルが選択されるようにする
+  if (selectedGenreId.value !== genreId) {
+    selectedGenreId.value = genreId;
+  }
+  emit('genre-selected', selectedGenreId.value);
+}
+
+// ESCキーで選択解除
+function handleKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    if (selectedGenreId.value !== -1) {
+      selectedGenreId.value = -1;
+      emit('genre-selected', -1);
+    }
+  }
+}
+
+async function fetchGenres() {
   try {
     // Rustのget_genresコマンドを呼び出し、結果をgenreListに入れる
     genreList.value = await invoke('get_genres');
   } catch (e) {
     console.error('Failed to fetch genres:', e);
   }
+}
+
+// コンポーネントがマウントされたら、データを取得する
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown);
+  fetchGenres();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown);
 });
 
 // 親から呼び出せるように、新しいジャンルを追加するメソッドを公開
@@ -82,6 +112,7 @@ function addNewGenre(genre: Genre) {
 }
 defineExpose({
   addNewGenre,
+  fetchGenres
 });
 </script>
 
@@ -95,43 +126,35 @@ defineExpose({
     </div>
     <ul>
       <!-- 「すべて表示」の項目を固定で追加 -->
-      <!-- クリックされたら、特別なIDとして-1を送る -->
-      <li @click="!isEditMode && selectGenre(-1)" :class="{ 'item-disabled': isEditMode }">すべて表示</li>
+      <li @click="selectGenre(-1)" :class="{ 'item-disabled': isEditMode, 'selected': selectedGenreId === -1 }">すべて表示</li>
       
       <!-- genreListの内容を元にリストを動的に描画する -->
-      <li v-for="genre in genreList" :key="genre.id" @click="!isEditMode && selectGenre(genre.id)" :class="{ 'item-disabled': isEditMode }">
+      <li v-for="genre in genreList" :key="genre.id" @click="selectGenre(genre.id)" :class="{ 'item-disabled': isEditMode, 'selected': selectedGenreId === genre.id }">
         <span>{{ genre.name }}</span>
-        <button v-if="isEditMode" @click.stop="requestDelete(genre)" class="delete-btn">
+        <button v-if="isEditMode && genre.name !== '未分類'" @click.stop="requestDelete(genre)" class="delete-btn">
           🗑️
         </button>
       </li>
     </ul>
   </div>
 
-  <!-- 削除確認モーダル -->
-  <teleport to="body">
-    <transition name="fade">
-      <div v-if="showDeleteConfirm" class="overlay">
-        <div class="modal" role="dialog" aria-modal="true">
-          <div class="modal-header">
-            <strong>ジャンル削除の確認</strong>
-          </div>
-          <div class="modal-body">
-            <p v-if="deletingGenre">
-              「<strong>{{ deletingGenre.name }}</strong>」を削除しますか？<br>
-              このジャンルには <strong>{{ bookCount }}</strong> 冊の書籍が登録されています。<br>
-              削除後、これらの書籍は「未分類」になります。
-            </p>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn danger" @click="confirmDelete" :disabled="deleteSubmitting">はい、削除します</button>
-            <button type="button" class="btn" @click="showDeleteConfirm = false" :disabled="deleteSubmitting">キャンセル</button>
-            <span class="error" v-if="deleteError">{{ deleteError }}</span>
-          </div>
-        </div>
-      </div>
-    </transition>
-  </teleport>
+  <ConfirmModal
+    :show="showDeleteConfirm"
+    title="ジャンル削除の確認"
+    :submitting="deleteSubmitting"
+    @confirm="handleDeleteConfirm"
+    @cancel="handleDeleteCancel"
+  >
+    <div v-if="deletingGenre">
+      <p>
+        「<strong>{{ deletingGenre.name }}</strong>」を削除しますか？<br>
+        このジャンルには <strong>{{ bookCount }}</strong> 冊の書籍が登録されています。<br>
+        削除後、これらの書籍は「未分類」になります。
+      </p>
+      <span class="error" v-if="deleteError">{{ deleteError }}</span>
+    </div>
+  </ConfirmModal>
+
 </template>
 
 <style scoped>
@@ -171,6 +194,12 @@ h2 {
   background: #e0e0e0;
 }
 
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
 li {
   display: flex;
   justify-content: space-between;
@@ -195,6 +224,15 @@ li.item-disabled:hover {
   font-weight: normal;
 }
 
+li.selected {
+  background-color: #dcebff;
+  font-weight: 600;
+}
+
+li.selected:hover {
+  background-color: #caddff;
+}
+
 .delete-btn {
   background: none;
   border: none;
@@ -211,106 +249,5 @@ li.item-disabled:hover {
   color: #d32f2f;
 }
 
-/* --- 共通スタイルとモーダル --- */
-.btn {
-  padding: 4px 14px;
-  font-size: 13px;
-  cursor: pointer;
-  border: 1px solid #bbb;
-  background: #fff;
-  border-radius: 4px;
-  line-height: 1.3;
-  transition: background .15s, border-color .15s, box-shadow .15s;
-}
 
-.btn:hover:not(:disabled) {
-  background: #f0f0f0;
-}
-
-.btn:disabled {
-  opacity: .55;
-  cursor: not-allowed;
-}
-
-.btn.danger {
-  background-color: #d32f2f;
-  color: white;
-  border-color: #c62828;
-}
-
-.btn.danger:hover:not(:disabled) {
-  background-color: #c62828;
-}
-
-.error {
-  color: #d00;
-  font-size: 12px;
-}
-
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, .35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1200;
-}
-
-.modal {
-  background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
-  width: 420px;
-  max-width: 90%;
-  animation: popup .18s ease;
-}
-
-.modal-header {
-  padding: 10px 14px;
-  border-bottom: 1px solid #eee;
-  font-size: 14px;
-}
-
-.modal-body {
-  padding: 16px 14px;
-  font-size: 14px;
-}
-
-.modal-body p {
-  margin: 0;
-  line-height: 1.6;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 8px 14px 12px;
-  background-color: #f7f7f7;
-  border-top: 1px solid #eee;
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity .18s ease;
-}
-
-@keyframes popup {
-  from {
-    transform: scale(0.95);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
 </style>

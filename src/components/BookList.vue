@@ -3,6 +3,7 @@
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { Book, UpdateBook, Genre } from '../types';
+import ConfirmModal from './ConfirmModal.vue';
 
 const props = defineProps<{
   books: Book[]
@@ -11,7 +12,87 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'book-deleted', id: number): void
   (e: 'genre-added', genre: Genre): void
+  (e: 'selection-change', selectedIds: number[]): void
+  (e: 'books-deleted', deletedIds: number[]): void
+  (e: 'book-updated'): void
 }>();
+
+let lastClickedBookId: number | null = null;
+const isShifting = ref(false);
+
+const selectedBookIds = ref(new Set<number>());
+
+// 選択状態が変更されたら親に通知する
+watch(selectedBookIds, (newSelection) => {
+  emit('selection-change', Array.from(newSelection));
+}, { deep: true });
+
+const allSelected = computed(() => {
+  if (props.books.length === 0) return false;
+  return props.books.every(book => selectedBookIds.value.has(book.id));
+});
+
+function toggleBookSelection(bookId: number) {
+  if (selectedBookIds.value.has(bookId)) {
+    selectedBookIds.value.delete(bookId);
+  } else {
+    selectedBookIds.value.add(bookId);
+  }
+}
+
+function toggleSelectAll(event: Event) {
+  const target = event.target as HTMLInputElement;
+  if (target.checked) {
+    props.books.forEach(book => selectedBookIds.value.add(book.id));
+  } else {
+    selectedBookIds.value.clear();
+  }
+}
+
+function handleRowClick(bookId: number, event: MouseEvent) {
+  // チェックボックスや編集ボタンのクリックでは行選択のトグルをしない
+  if ((event.target as HTMLElement).closest('.edit-inline-btn, input[type="checkbox"]')) {
+    return;
+  }
+
+  // Shiftキーを押したときにテキスト選択がされるのを防ぐ
+  if (event.shiftKey) {
+    event.preventDefault();
+  }
+
+  const currentIndex = props.books.findIndex(b => b.id === bookId);
+  if (currentIndex === -1) return;
+
+  if (event.shiftKey && lastClickedBookId !== null) {
+    const lastIndex = props.books.findIndex(b => b.id === lastClickedBookId);
+    if (lastIndex !== -1) {
+      // Shiftキーでの選択は、アンカーからの範囲で常に上書きする
+      selectedBookIds.value.clear();
+      const start = Math.min(lastIndex, currentIndex);
+      const end = Math.max(lastIndex, currentIndex);
+      for (let i = start; i <= end; i++) {
+        selectedBookIds.value.add(props.books[i].id);
+      }
+    }
+  } else if (event.ctrlKey) {
+    // Ctrlキーが押されている場合は、現在の選択状態をトグル
+    toggleBookSelection(bookId);
+    // アンカーを更新
+    lastClickedBookId = bookId;
+  } else {
+    // 通常のクリック
+    // すでにこの行だけが選択されている場合は、選択を解除
+    if (selectedBookIds.value.has(bookId) && selectedBookIds.value.size === 1) {
+      selectedBookIds.value.clear();
+      lastClickedBookId = null; // アンカーをリセット
+    } else {
+      // そうでなければ、他の選択をクリアして現在の行のみ選択
+      selectedBookIds.value.clear();
+      selectedBookIds.value.add(bookId);
+      lastClickedBookId = bookId; // アンカーを更新
+    }
+  }
+}
 
 // localStorageから設定を読み込むヘルパー
 function loadFromLocalStorage<T extends object>(key: string, defaultValue: T): T {
@@ -137,10 +218,27 @@ function onMouseUp() {
 const genres = ref<Genre[]>([]); // ジャンル一覧を取得して編集で使う
 const editGenreName = ref(''); // 編集時のジャンル名入力
 
+function handleKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    selectedBookIds.value.clear();
+  }
+  if (e.key === 'Shift') {
+    isShifting.value = true;
+  }
+}
+
+function handleKeyUp(e: KeyboardEvent) {
+  if (e.key === 'Shift') {
+    isShifting.value = false;
+  }
+}
+
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
-  document.addEventListener('click', onClickOutside); // ← 追加
+  document.addEventListener('click', onClickOutside);
+  window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('keyup', handleKeyUp);
   // ジャンル一覧を先に取っておく
   (async () => {
     try {
@@ -154,7 +252,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onMouseMove);
   window.removeEventListener('mouseup', onMouseUp);
-  document.removeEventListener('click', onClickOutside); // ← 追加
+  document.removeEventListener('click', onClickOutside);
+  window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('keyup', handleKeyUp);
 });
 
 // ===== 編集モーダル状態 =====
@@ -220,6 +320,7 @@ async function submitEdit() {
     if (idx !== -1) {
       Object.assign(props.books[idx], updated);
     }
+    emit('book-updated');
     closeEdit(); // ← これで正常に閉じる
   } catch (e) {
     console.error(e);
@@ -237,8 +338,8 @@ function requestDelete() {
   showDeleteConfirm.value = true;
 }
 
-async function confirmDelete() {
-  if (!editForm.value) return;
+async function handleDeleteConfirm() {
+  if (!editForm.value || editSubmitting.value) return;
 
   editSubmitting.value = true;
   editError.value = '';
@@ -257,6 +358,10 @@ async function confirmDelete() {
   }
 }
 
+function handleDeleteCancel() {
+  showDeleteConfirm.value = false;
+}
+
 // 編集時にジャンル名を確保してIDを返す（AddBookForm と同様）
 async function ensureGenreIdForEdit(name: string): Promise<number> {
   const found = genres.value.find(g => g.name === name);
@@ -267,18 +372,36 @@ async function ensureGenreIdForEdit(name: string): Promise<number> {
   return newGenre.id;
 }
 
+async function deleteSelectedBooks() {
+  const idsToDelete = Array.from(selectedBookIds.value);
+  if (idsToDelete.length === 0) return;
+
+  try {
+    // 複数の削除処理を並行して実行
+    await Promise.all(idsToDelete.map(id => invoke('delete_book', { id })));
+    // 親コンポーネントに削除されたIDリストを通知
+    emit('books-deleted', idsToDelete);
+    // 選択状態をクリア
+    selectedBookIds.value.clear();
+  } catch (e) {
+    console.error('一括削除に失敗しました', e);
+    // ここでユーザーにエラー通知を表示することもできる
+  }
+}
+
 defineExpose({
   removeGenreFromList(genreId: number) {
     const index = genres.value.findIndex(g => g.id === genreId);
     if (index !== -1) {
       genres.value.splice(index, 1);
     }
-  }
+  },
+  deleteSelectedBooks // 親から呼び出せるように公開
 });
 </script>
 
 <template>
-  <div class="book-list-container" :class="{ resizing: isResizing }">
+  <div class="book-list-container" :class="{ resizing: isResizing, 'is-shifting': isShifting }">
     <!-- ▼ ヘッダーを変更 -->
     <div class="list-header">
       <h2>書籍一覧</h2>
@@ -305,8 +428,9 @@ defineExpose({
     </div>
 
     <div v-if="books.length > 0" class="table-wrapper">
-      <table :style="{ width: tableWidth + 'px' }">
+      <table :style="{ width: tableWidth + 40 + 'px' }">
         <colgroup>
+          <col style="width: 40px;" /> <!-- チェックボックス列 -->
           <col :style="{ width: columnWidths.title + 'px' }" />
           <col v-if="visibleColumns.isbn" :style="{ width: columnWidths.isbn + 'px' }" />
           <col v-if="visibleColumns.author" :style="{ width: columnWidths.author + 'px' }" />
@@ -317,6 +441,9 @@ defineExpose({
         </colgroup>
         <thead>
           <tr>
+            <th>
+              <input type="checkbox" @change="toggleSelectAll" :checked="allSelected" />
+            </th>
             <th>
               <div class="th-inner">
                 タイトル
@@ -362,7 +489,10 @@ defineExpose({
           </tr>
         </thead>
         <tbody>
-          <tr v-for="book in books" :key="book.id">
+          <tr v-for="book in books" :key="book.id" @click="handleRowClick(book.id, $event)" :class="{ selected: selectedBookIds.has(book.id) }">
+            <td>
+              <input type="checkbox" :checked="selectedBookIds.has(book.id)" @change.stop="toggleBookSelection(book.id)" />
+            </td>
             <td class="title-cell">
               <span class="title-text">{{ book.title }}</span>
               <button type="button" class="edit-inline-btn btn" @click.stop="openEdit(book)" aria-label="編集">編集</button>
@@ -447,24 +577,16 @@ defineExpose({
       </div>
     </transition>
 
-    <!-- 削除確認モーダル -->
-    <transition name="fade">
-      <div v-if="showDeleteConfirm" class="overlay">
-        <div class="modal" role="dialog" aria-modal="true">
-          <div class="modal-header">
-            <strong>削除の確認</strong>
-          </div>
-          <div class="modal-body">
-            <p>この書籍を本当に削除しますか？<br>この操作は取り消せません。</p>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn danger" @click="confirmDelete" :disabled="editSubmitting">はい、削除します</button>
-            <button type="button" class="btn" @click="showDeleteConfirm = false" :disabled="editSubmitting">キャンセル</button>
-            <span class="error" v-if="editError">{{ editError }}</span>
-          </div>
-        </div>
-      </div>
-    </transition>
+    <ConfirmModal
+      :show="showDeleteConfirm"
+      title="削除の確認"
+      :submitting="editSubmitting"
+      @confirm="handleDeleteConfirm"
+      @cancel="handleDeleteCancel"
+    >
+      <p>この書籍を本当に削除しますか？<br>この操作は取り消せません。</p>
+      <span class="error" v-if="editError">{{ editError }}</span>
+    </ConfirmModal>
 
   </teleport>
 </template>
@@ -482,6 +604,10 @@ defineExpose({
 .book-list-container.resizing {
   user-select: none;
   cursor: col-resize;
+}
+
+.book-list-container.is-shifting {
+  user-select: none;
 }
 
 .table-wrapper {
@@ -567,6 +693,22 @@ tbody tr:hover .edit-inline-btn,
 /* 行ホバー時の視認性向上（任意） */
 tbody tr:hover {
   background: #eef5ff;
+}
+
+/* 選択された行のスタイル */
+tbody tr.selected {
+  background-color: #dcebff; /* 明るい青色 */
+}
+
+tbody tr.selected:hover {
+  background-color: #caddff; /* 少し濃い青色 */
+}
+
+/* チェックボックスセルの調整 */
+th:first-child,
+td:first-child {
+  text-align: center;
+  padding: 6px 4px;
 }
 
 /* 編集モーダル */
@@ -802,53 +944,6 @@ tbody tr:hover {
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity .18s ease;
-}
-
-/* --- 汎用モーダルスタイル --- */
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, .35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1200;
-}
-
-.modal {
-  background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
-  width: 420px;
-  max-width: 90%;
-  animation: popup .18s ease;
-}
-
-.modal-header {
-  padding: 10px 14px;
-  border-bottom: 1px solid #eee;
-  font-size: 14px;
-}
-
-.modal-body {
-  padding: 16px 14px;
-  font-size: 14px;
-}
-
-.modal-body p {
-  margin: 0;
-  line-height: 1.6;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 8px 14px 12px;
-  background-color: #f7f7f7;
-  border-top: 1px solid #eee;
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
 }
 
 @keyframes popup {

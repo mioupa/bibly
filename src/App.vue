@@ -6,6 +6,7 @@ import GenreList from './components/GenreList.vue';
 import BookList from './components/BookList.vue';
 import AddBookForm from './components/AddBookForm.vue';
 import SettingsForm from './components/SettingsForm.vue';
+import ConfirmModal from './components/ConfirmModal.vue';
 import type { Book, Genre } from './types';
 
 const genreListRef = ref<InstanceType<typeof GenreList> | null>(null);
@@ -13,6 +14,10 @@ const bookListRef = ref<InstanceType<typeof BookList> | null>(null);
 const bookList = ref<Book[]>([]);
 const showAddForm = ref(false);
 const showSettings = ref(false);
+const selectedIds = ref<number[]>([]);
+
+const showBulkDeleteConfirm = ref(false);
+const bulkDeleteSubmitting = ref(false);
 
 const sidebarWidth = ref(200);
 const isResizing = ref(false);
@@ -84,7 +89,8 @@ function closeSettings() {
 
 function handleBookAdded(book: Book) {
   bookList.value.unshift(book);
-  // closeAddForm();
+  // 「未分類」が新しく作られた可能性があるので、ジャンルリストを更新する
+  genreListRef.value?.fetchGenres();
 }
 
 function handleGenreAdded(genre: Genre) {
@@ -93,6 +99,7 @@ function handleGenreAdded(genre: Genre) {
 
 function handleBookDeleted(id: number) {
   bookList.value = bookList.value.filter(book => book.id !== id);
+  checkAndCleanUnclassifiedGenre();
 }
 
 function handleGenreDeleted(genreId: number) {
@@ -104,6 +111,60 @@ function handleGenreDeleted(genreId: number) {
   });
   // BookListコンポーネントが持つジャンルリストからも削除する
   bookListRef.value?.removeGenreFromList(genreId);
+}
+
+function onSelectionChange(newSelectedIds: number[]) {
+  selectedIds.value = newSelectedIds;
+}
+
+function requestBulkDelete() {
+  if (selectedIds.value.length === 0) return;
+  showBulkDeleteConfirm.value = true;
+}
+
+async function handleBulkDeleteConfirm() {
+  if (bulkDeleteSubmitting.value) return;
+  bulkDeleteSubmitting.value = true;
+  try {
+    await bookListRef.value?.deleteSelectedBooks();
+  } catch (e) {
+    console.error("一括削除でエラーが発生しました", e);
+  } finally {
+    bulkDeleteSubmitting.value = false;
+    showBulkDeleteConfirm.value = false;
+  }
+}
+
+function handleBulkDeleteCancel() {
+  showBulkDeleteConfirm.value = false;
+}
+
+function onBooksDeleted(deletedIds: number[]) {
+  bookList.value = bookList.value.filter(book => !deletedIds.includes(book.id));
+  selectedIds.value = [];
+  checkAndCleanUnclassifiedGenre();
+}
+
+async function checkAndCleanUnclassifiedGenre() {
+  try {
+    const genres = await invoke<Genre[]>('get_genres');
+    const unclassifiedGenre = genres.find(g => g.name === '未分類');
+
+    if (unclassifiedGenre) {
+      const count = await invoke<number>('get_book_count_by_genre', { genreId: unclassifiedGenre.id });
+      if (count === 0) {
+        await invoke('delete_genre', { genreId: unclassifiedGenre.id });
+        // ジャンルリストを更新
+        genreListRef.value?.fetchGenres();
+      }
+    }
+  } catch (e) {
+    console.error('Failed to check and clean unclassified genre:', e);
+  }
+}
+
+function handleBookUpdated() {
+  checkAndCleanUnclassifiedGenre();
 }
 
 onMounted(() => {
@@ -121,8 +182,11 @@ onMounted(() => {
     <div class="content">
       <div class="toolbar">
         <div class="toolbar-left">
-          <button class="btn primary" @click="toggleAddForm">
+          <button v-if="selectedIds.length === 0" class="btn primary" @click="toggleAddForm">
             新規＋
+          </button>
+          <button v-else class="btn danger" @click="requestBulkDelete">
+            削除 ({{ selectedIds.length }})
           </button>
         </div>
         <div class="toolbar-right">
@@ -151,7 +215,18 @@ onMounted(() => {
         </transition>
       </teleport>
 
-      <BookList ref="bookListRef" :books="bookList" @book-deleted="handleBookDeleted" @genre-added="handleGenreAdded" />
+      <ConfirmModal
+        :show="showBulkDeleteConfirm"
+        title="削除の確認"
+        :submitting="bulkDeleteSubmitting"
+        @confirm="handleBulkDeleteConfirm"
+        @cancel="handleBulkDeleteCancel"
+      >
+        <p><strong>{{ selectedIds.length }}</strong>件の書籍を本当に削除しますか？<br>この操作は取り消せません。</p>
+      </ConfirmModal>
+
+      <BookList ref="bookListRef" :books="bookList" @book-deleted="handleBookDeleted" @genre-added="handleGenreAdded"
+        @selection-change="onSelectionChange" @books-deleted="onBooksDeleted" @book-updated="handleBookUpdated" />
     </div>
   </main>
 </template>
@@ -252,6 +327,16 @@ onMounted(() => {
 
 .btn.primary:hover:not(:disabled) {
   background: #1565c0;
+}
+
+.btn.danger {
+  background-color: #d32f2f;
+  color: white;
+  border-color: #c62828;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background-color: #c62828;
 }
 
 /* モーダル */

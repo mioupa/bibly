@@ -32,7 +32,6 @@ const isbnInputEl = ref<HTMLInputElement | null>(null); // DOM要素への参照
 // JANコード入力用ポップアップの状態
 const showJanPopup = ref(false);
 const janCode = ref('');
-const processingJan = ref(false); // 今は使わないが将来のために残す
 const janErrorMsg = ref('');
 const tempBookInfo = ref<BookInfoFromApi | null>(null); // NDLからの情報を一時保持
 const janInputEl = ref<HTMLInputElement | null>(null); // JANコード入力欄のDOM参照
@@ -91,17 +90,13 @@ async function submit() {
   errorMsg.value = '';
 
   try {
-    let genreId: number | null = null;
-    const trimmedGenreName = genreName.value.trim();
-
-    // ジャンル名が入力されている場合のみ、IDをENSURE（存在しない場合は作成）
-    if (trimmedGenreName) {
-      genreId = await ensureGenreId(trimmedGenreName);
-    }
+    // ジャンル名が空欄の場合は「未分類」として扱う
+    const genreToEnsure = genreName.value.trim() || '未分類';
+    const genreId = await ensureGenreId(genreToEnsure);
 
     const payload: NewBook = {
       ...form.value,
-      genre_id: genreId, // `null` または `number`
+      genre_id: genreId,
       price: form.value.price == null ? undefined : Number(form.value.price),
       c_code: form.value.c_code?.trim() || undefined,
     };
