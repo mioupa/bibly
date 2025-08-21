@@ -47,8 +47,7 @@ pub fn add_genre(name: String, db: State<DbConnection>) -> Result<Genre, String>
 }
 
 #[tauri::command]
-pub fn delete_genre(genre_id: i64, db: State<DbConnection>) -> Result<(), String> {
+pub fn delete_genre(id: i64, db: State<DbConnection>) -> Result<(), String> {
     let mut conn = db.0.lock().unwrap();
-    crate::db::delete_genre_and_unassign_books(&mut conn, genre_id)
-        .map_err(|e| e.to_string())
+    crate::db::delete_genre_and_unassign_books(&mut conn, id).map_err(|e| e.to_string())
 }
