@@ -101,9 +101,11 @@ pub fn update_book(book: UpdateBook, db: State<DbConnection>) -> Result<Book, St
 #[tauri::command]
 pub fn delete_book(id: i64, db: State<DbConnection>) -> Result<(), String> {
     let conn = db.0.lock().unwrap();
-    crate::db::delete_book(&conn, id)
-        .map(|_| ()) // 成功したら usize を () に変換
-        .map_err(|e| e.to_string())
+    match crate::db::delete_book(&conn, id) {
+        Ok(affected) if affected > 0 => Ok(()),
+        Ok(_) => Err(format!("Book with id {} not found", id)),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
