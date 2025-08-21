@@ -1,4 +1,3 @@
-```vue
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 
@@ -7,22 +6,25 @@ const emit = defineEmits<{
 }>();
 
 const apiKey = ref('');
+const apiProvider = ref<'ndl' | 'google'>('ndl');
 const saving = ref(false);
 const errorMsg = ref('');
 
-const STORAGE_KEY = 'googleBooksApiKey';
+const API_KEY_STORAGE = 'googleBooksApiKey';
+const PROVIDER_STORAGE = 'bookInfoApiProvider';
 
 onMounted(() => {
-  apiKey.value = localStorage.getItem(STORAGE_KEY) || '';
+  apiKey.value = localStorage.getItem(API_KEY_STORAGE) || '';
+  apiProvider.value = (localStorage.getItem(PROVIDER_STORAGE) as 'ndl' | 'google') || 'ndl';
 });
 
 function save() {
   errorMsg.value = '';
   saving.value = true;
   try {
-    // 簡易バリデーション（任意）
+    localStorage.setItem(PROVIDER_STORAGE, apiProvider.value);
     // 空文字は許容（APIキー未設定のまま使う場合があるため）
-    localStorage.setItem(STORAGE_KEY, apiKey.value.trim());
+    localStorage.setItem(API_KEY_STORAGE, apiKey.value.trim());
     emit('close');
   } catch (e) {
     console.error(e);
@@ -46,6 +48,14 @@ function cancel() {
 
     <div class="settings-body" style="padding:12px;">
       <div class="row" style="margin-bottom:10px;">
+        <label style="display:block;font-weight:600;margin-bottom:6px;">使用するAPI</label>
+        <select v-model="apiProvider" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;">
+          <option value="ndl">NDL</option>
+          <option value="google">Google Books</option>
+        </select>
+      </div>
+
+      <div class="row" style="margin-bottom:10px;" v-if="apiProvider === 'google'">
         <label style="display:block;font-weight:600;margin-bottom:6px;">Google Books API キー</label>
         <input v-model="apiKey" placeholder="API キーを入力（未入力可）" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
         <p style="margin:8px 0 0;font-size:12px;color:#666;">将来的に自動ISBN検索で使用します。APIキーなしでも手動入力は可能です。</p>
@@ -92,4 +102,3 @@ function cancel() {
   font-size: 13px;
 }
 </style>
-```
