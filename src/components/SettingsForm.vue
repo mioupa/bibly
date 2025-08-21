@@ -1,4 +1,3 @@
-```vue
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 
@@ -6,23 +5,35 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>();
 
-const apiKey = ref('');
+const apiChoice = ref<'ndl' | 'amazon'>('ndl');
+const amazonAccessKey = ref('');
+const amazonSecretKey = ref('');
+const amazonAssociateTag = ref('');
 const saving = ref(false);
 const errorMsg = ref('');
 
-const STORAGE_KEY = 'googleBooksApiKey';
+const STORAGE_API = 'bookInfoApi';
+const STORAGE_AMAZON_ACCESS = 'amazonAccessKey';
+const STORAGE_AMAZON_SECRET = 'amazonSecretKey';
+const STORAGE_AMAZON_ASSOCIATE = 'amazonAssociateTag';
 
 onMounted(() => {
-  apiKey.value = localStorage.getItem(STORAGE_KEY) || '';
+  apiChoice.value = (localStorage.getItem(STORAGE_API) as 'ndl' | 'amazon') || 'ndl';
+  amazonAccessKey.value = localStorage.getItem(STORAGE_AMAZON_ACCESS) || '';
+  amazonSecretKey.value = localStorage.getItem(STORAGE_AMAZON_SECRET) || '';
+  amazonAssociateTag.value = localStorage.getItem(STORAGE_AMAZON_ASSOCIATE) || '';
 });
 
 function save() {
   errorMsg.value = '';
   saving.value = true;
   try {
-    // 簡易バリデーション（任意）
-    // 空文字は許容（APIキー未設定のまま使う場合があるため）
-    localStorage.setItem(STORAGE_KEY, apiKey.value.trim());
+    localStorage.setItem(STORAGE_API, apiChoice.value);
+    if (apiChoice.value === 'amazon') {
+      localStorage.setItem(STORAGE_AMAZON_ACCESS, amazonAccessKey.value.trim());
+      localStorage.setItem(STORAGE_AMAZON_SECRET, amazonSecretKey.value.trim());
+      localStorage.setItem(STORAGE_AMAZON_ASSOCIATE, amazonAssociateTag.value.trim());
+    }
     emit('close');
   } catch (e) {
     console.error(e);
@@ -46,9 +57,22 @@ function cancel() {
 
     <div class="settings-body" style="padding:12px;">
       <div class="row" style="margin-bottom:10px;">
-        <label style="display:block;font-weight:600;margin-bottom:6px;">Google Books API キー</label>
-        <input v-model="apiKey" placeholder="API キーを入力（未入力可）" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
-        <p style="margin:8px 0 0;font-size:12px;color:#666;">将来的に自動ISBN検索で使用します。APIキーなしでも手動入力は可能です。</p>
+        <label style="display:block;font-weight:600;margin-bottom:6px;">使用するAPI</label>
+        <select v-model="apiChoice" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;">
+          <option value="ndl">NDL</option>
+          <option value="amazon">Amazon</option>
+        </select>
+      </div>
+
+      <div v-if="apiChoice === 'amazon'" style="margin-bottom:10px;">
+        <label style="display:block;font-weight:600;margin-bottom:6px;">Amazon アクセスキーID</label>
+        <input v-model="amazonAccessKey" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
+
+        <label style="display:block;font-weight:600;margin:10px 0 6px;">Amazon シークレットキー</label>
+        <input v-model="amazonSecretKey" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
+
+        <label style="display:block;font-weight:600;margin:10px 0 6px;">Amazon アソシエイトID</label>
+        <input v-model="amazonAssociateTag" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
       </div>
 
       <div class="actions" style="display:flex;gap:12px;align-items:center;">
@@ -92,4 +116,3 @@ function cancel() {
   font-size: 13px;
 }
 </style>
-```

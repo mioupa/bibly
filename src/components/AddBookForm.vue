@@ -140,7 +140,7 @@ function onIsbnEnter(event: KeyboardEvent) {
   searchByIsbn();
 }
 
-// NDL APIを呼び出すように修正
+// 選択されたAPIから書籍情報を取得
 async function searchByIsbn() {
   errorMsg.value = '';
   if (!isbnInput.value.trim()) {
@@ -149,12 +149,24 @@ async function searchByIsbn() {
   }
   searching.value = true;
   try {
-    const result = await invoke<BookInfoFromApi>('fetch_book_info_from_ndl', {
-      isbn: isbnInput.value.trim(),
-    });
-    // 取得した情報を一時保持
+    const apiChoice = localStorage.getItem('bookInfoApi') || 'ndl';
+    let result: BookInfoFromApi;
+    if (apiChoice === 'amazon') {
+      const accessKey = localStorage.getItem('amazonAccessKey') || '';
+      const secretKey = localStorage.getItem('amazonSecretKey') || '';
+      const associateTag = localStorage.getItem('amazonAssociateTag') || '';
+      result = await invoke<BookInfoFromApi>('fetch_book_info_from_amazon', {
+        isbn: isbnInput.value.trim(),
+        accessKey,
+        secretKey,
+        associateTag,
+      });
+    } else {
+      result = await invoke<BookInfoFromApi>('fetch_book_info_from_ndl', {
+        isbn: isbnInput.value.trim(),
+      });
+    }
     tempBookInfo.value = result;
-    // JANコード入力ポップアップを表示
     showJanPopup.value = true;
     janCode.value = '';
     janErrorMsg.value = '';
