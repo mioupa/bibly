@@ -5,17 +5,21 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>();
 
-const apiKey = ref('');
-const apiProvider = ref<'ndl' | 'google'>('ndl');
+const googleApiKey = ref('');
+const rakutenAppId = ref('');
+const apiProvider = ref<'ndl' | 'google' | 'rakuten'>('ndl');
 const saving = ref(false);
 const errorMsg = ref('');
 
-const API_KEY_STORAGE = 'googleBooksApiKey';
+const GOOGLE_API_KEY_STORAGE = 'googleBooksApiKey';
+const RAKUTEN_APP_ID_STORAGE = 'rakutenApplicationId';
 const PROVIDER_STORAGE = 'bookInfoApiProvider';
 
 onMounted(() => {
-  apiKey.value = localStorage.getItem(API_KEY_STORAGE) || '';
-  apiProvider.value = (localStorage.getItem(PROVIDER_STORAGE) as 'ndl' | 'google') || 'ndl';
+  googleApiKey.value = localStorage.getItem(GOOGLE_API_KEY_STORAGE) || '';
+  rakutenAppId.value = localStorage.getItem(RAKUTEN_APP_ID_STORAGE) || '';
+  apiProvider.value =
+    (localStorage.getItem(PROVIDER_STORAGE) as 'ndl' | 'google' | 'rakuten') || 'ndl';
 });
 
 function save() {
@@ -23,8 +27,8 @@ function save() {
   saving.value = true;
   try {
     localStorage.setItem(PROVIDER_STORAGE, apiProvider.value);
-    // 空文字は許容（APIキー未設定のまま使う場合があるため）
-    localStorage.setItem(API_KEY_STORAGE, apiKey.value.trim());
+    localStorage.setItem(GOOGLE_API_KEY_STORAGE, googleApiKey.value.trim());
+    localStorage.setItem(RAKUTEN_APP_ID_STORAGE, rakutenAppId.value.trim());
     emit('close');
   } catch (e) {
     console.error(e);
@@ -52,13 +56,19 @@ function cancel() {
         <select v-model="apiProvider" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;">
           <option value="ndl">NDL</option>
           <option value="google">Google Books</option>
+          <option value="rakuten">Rakuten Books</option>
         </select>
       </div>
 
       <div class="row" style="margin-bottom:10px;" v-if="apiProvider === 'google'">
         <label style="display:block;font-weight:600;margin-bottom:6px;">Google Books API キー</label>
-        <input v-model="apiKey" placeholder="API キーを入力（未入力可）" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
+        <input v-model="googleApiKey" placeholder="API キーを入力（未入力可）" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
         <p style="margin:8px 0 0;font-size:12px;color:#666;">将来的に自動ISBN検索で使用します。APIキーなしでも手動入力は可能です。</p>
+      </div>
+
+      <div class="row" style="margin-bottom:10px;" v-if="apiProvider === 'rakuten'">
+        <label style="display:block;font-weight:600;margin-bottom:6px;">Rakuten Books アプリケーションID</label>
+        <input v-model="rakutenAppId" placeholder="アプリケーションIDを入力" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
       </div>
 
       <div class="actions" style="display:flex;gap:12px;align-items:center;">
