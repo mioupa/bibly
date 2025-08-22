@@ -25,6 +25,7 @@ fn main() {
             commands::add_genre,
             commands::fetch_book_info_from_ndl,
             commands::fetch_book_info_from_google_books,
+            commands::fetch_book_info_from_rakuten,
             commands::delete_book,
             commands::get_book_count_by_genre,
             commands::delete_genre,

@@ -1,6 +1,6 @@
 # bibly
 
-簡単な書籍管理デスクトップアプリ（Tauri + Vue）。ISBNから国立国会図書館（NDL）APIやGoogle Books APIを使って自動入力する機能を備えています。設定画面で使用するAPIを選択できます。
+簡単な書籍管理デスクトップアプリ（Tauri + Vue）。ISBNから国立国会図書館（NDL）APIやGoogle Books API、楽天ブックスAPIを使って自動入力する機能を備えています。設定画面で使用するAPIを選択できます。
 
 ## 主要ファイル
 - フロントエンド（Vue 3）
@@ -12,6 +12,7 @@
   - アプリ起動: [src-tauri/src/main.rs](src-tauri/src/main.rs)
   - NDL検索コマンド: [`commands::fetch_book_info_from_ndl`](src-tauri/src/commands/mod.rs) （Tauriコマンド）
   - Google Books検索コマンド: [`commands::fetch_book_info_from_google_books`](src-tauri/src/commands/mod.rs)
+  - 楽天ブックス検索コマンド: [`commands::fetch_book_info_from_rakuten`](src-tauri/src/commands/mod.rs)
 
 ## 必要環境
 - Node.js（推奨: LTS）
@@ -43,7 +44,7 @@
 
 ## ISBN 自動入力について
 - UI: [src/components/AddBookForm.vue](src/components/AddBookForm.vue) の「自動入力 (ISBN)」タブから利用可能。
-- 実際の検索は Tauri コマンド [`commands::fetch_book_info_from_ndl`](src-tauri/src/commands/mod.rs) または [`commands::fetch_book_info_from_google_books`](src-tauri/src/commands/mod.rs) に委譲されます。設定で選択したAPIに応じてバックエンドで API を呼び出し、タイトル・著者・出版社を返します。
+- 実際の検索は Tauri コマンド [`commands::fetch_book_info_from_ndl`](src-tauri/src/commands/mod.rs) または [`commands::fetch_book_info_from_google_books`](src-tauri/src/commands/mod.rs)、[`commands::fetch_book_info_from_rakuten`](src-tauri/src/commands/mod.rs) に委譲されます。設定で選択したAPIに応じてバックエンドで API を呼び出し、タイトル・著者・出版社を返します。
 - バックエンドの依存は [src-tauri/Cargo.toml](src-tauri/Cargo.toml) を確認してください（例: reqwest, quick-xml）。
 
 ## 注意点 / トラブルシューティング

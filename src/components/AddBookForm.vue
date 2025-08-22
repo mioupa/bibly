@@ -36,7 +36,8 @@ const janErrorMsg = ref('');
 const tempBookInfo = ref<BookInfoFromApi | null>(null); // NDLからの情報を一時保持
 const janInputEl = ref<HTMLInputElement | null>(null); // JANコード入力欄のDOM参照
 
-const API_KEY_STORAGE = 'googleBooksApiKey';
+const GOOGLE_API_KEY_STORAGE = 'googleBooksApiKey';
+const RAKUTEN_APP_ID_STORAGE = 'rakutenApplicationId';
 const PROVIDER_STORAGE = 'bookInfoApiProvider';
 
 // JANコードポップアップが表示されたら入力欄にフォーカスを当てる
@@ -155,10 +156,16 @@ async function searchByIsbn() {
     const provider = localStorage.getItem(PROVIDER_STORAGE) || 'ndl';
     let result: BookInfoFromApi;
     if (provider === 'google') {
-      const apiKey = localStorage.getItem(API_KEY_STORAGE) || '';
+      const apiKey = localStorage.getItem(GOOGLE_API_KEY_STORAGE) || '';
       result = await invoke<BookInfoFromApi>('fetch_book_info_from_google_books', {
         isbn: isbnInput.value.trim(),
         apiKey,
+      });
+    } else if (provider === 'rakuten') {
+      const applicationId = localStorage.getItem(RAKUTEN_APP_ID_STORAGE) || '';
+      result = await invoke<BookInfoFromApi>('fetch_book_info_from_rakuten', {
+        isbn: isbnInput.value.trim(),
+        applicationId,
       });
     } else {
       result = await invoke<BookInfoFromApi>('fetch_book_info_from_ndl', {
