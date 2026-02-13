@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Accidental Windows redirection target (e.g. `chcp 65001 > null`)
+null
