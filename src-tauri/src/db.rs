@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use std::{fs, sync::Mutex};
 
 pub struct DbConnection(pub Mutex<Connection>);
@@ -46,10 +46,23 @@ pub fn delete_book(conn: &Connection, id: i64) -> Result<usize, rusqlite::Error>
 pub fn delete_genre_and_unassign_books(conn: &mut Connection, genre_id: i64) -> Result<(), rusqlite::Error> {
     let tx = conn.transaction()?;
 
-    // 1. Unassign books from the genre
-    tx.execute("UPDATE books SET genre_id = NULL WHERE genre_id = ?", [genre_id])?;
+    // 1. Ensure "未分類" genre exists and resolve its id.
+    let mut unclassified_id = tx
+        .query_row("SELECT id FROM genres WHERE name = '未分類'", [], |row| row.get::<_, i64>(0))
+        .optional()?;
 
-    // 2. Delete the genre
+    if unclassified_id.is_none() {
+        tx.execute("INSERT INTO genres (name) VALUES (?1)", ["未分類"])?;
+        unclassified_id = Some(tx.last_insert_rowid());
+    }
+
+    // 2. Move books to "未分類" before deleting the genre.
+    tx.execute(
+        "UPDATE books SET genre_id = ?1 WHERE genre_id = ?2",
+        [unclassified_id.unwrap(), genre_id],
+    )?;
+
+    // 3. Delete the genre itself.
     tx.execute("DELETE FROM genres WHERE id = ?", [genre_id])?;
 
     tx.commit()

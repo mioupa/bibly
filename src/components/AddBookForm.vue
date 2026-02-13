@@ -40,6 +40,14 @@ const GOOGLE_API_KEY_STORAGE = 'googleBooksApiKey';
 const RAKUTEN_APP_ID_STORAGE = 'rakutenApplicationId';
 const PROVIDER_STORAGE = 'bookInfoApiProvider';
 
+function normalizeIsbn(raw: string): string {
+  return raw.replace(/[-\s]/g, '').trim();
+}
+
+function isValidIsbnFormat(isbn: string): boolean {
+  return /^(?:\d{9}[\dXx]|\d{13})$/.test(isbn);
+}
+
 // JANコードポップアップが表示されたら入力欄にフォーカスを当てる
 watch(showJanPopup, async (isShown) => {
   if (isShown) {
@@ -87,8 +95,9 @@ async function ensureGenreId(name: string): Promise<number> {
 }
 
 async function submit() {
+  const trimmedTitle = form.value.title.trim();
   // タイトルが空の場合は何もしない
-  if (!form.value.title.trim()) return;
+  if (!trimmedTitle) return;
 
   submitting.value = true;
   errorMsg.value = '';
@@ -100,7 +109,11 @@ async function submit() {
 
     const payload: NewBook = {
       ...form.value,
+      title: trimmedTitle,
       genre_id: genreId,
+      isbn: form.value.isbn?.trim() || undefined,
+      author: form.value.author?.trim() || undefined,
+      publisher: form.value.publisher?.trim() || undefined,
       price: form.value.price == null ? undefined : Number(form.value.price),
       c_code: form.value.c_code?.trim() || undefined,
     };
@@ -147,29 +160,48 @@ function onIsbnEnter(event: KeyboardEvent) {
 // 選択されたAPIで書籍情報を検索
 async function searchByIsbn() {
   errorMsg.value = '';
-  if (!isbnInput.value.trim()) {
+  const normalizedIsbn = normalizeIsbn(isbnInput.value);
+  if (!normalizedIsbn) {
     errorMsg.value = 'ISBNを入力してください';
     return;
   }
+
+  if (!isValidIsbnFormat(normalizedIsbn)) {
+    errorMsg.value = 'ISBNは10桁または13桁で入力してください（ハイフン・空白は可）';
+    return;
+  }
+
+  const provider = (localStorage.getItem(PROVIDER_STORAGE) as 'ndl' | 'google' | 'rakuten') || 'ndl';
+
+  if (provider === 'google' && !(localStorage.getItem(GOOGLE_API_KEY_STORAGE) || '').trim()) {
+    errorMsg.value = 'Google Books APIキーが未設定です。設定画面で入力してください。';
+    return;
+  }
+
+  if (provider === 'rakuten' && !(localStorage.getItem(RAKUTEN_APP_ID_STORAGE) || '').trim()) {
+    errorMsg.value = 'RakutenアプリケーションIDが未設定です。設定画面で入力してください。';
+    return;
+  }
+
+  isbnInput.value = normalizedIsbn;
   searching.value = true;
   try {
-    const provider = localStorage.getItem(PROVIDER_STORAGE) || 'ndl';
     let result: BookInfoFromApi;
     if (provider === 'google') {
-      const apiKey = localStorage.getItem(GOOGLE_API_KEY_STORAGE) || '';
+      const apiKey = (localStorage.getItem(GOOGLE_API_KEY_STORAGE) || '').trim();
       result = await invoke<BookInfoFromApi>('fetch_book_info_from_google_books', {
-        isbn: isbnInput.value.trim(),
+        isbn: normalizedIsbn,
         apiKey,
       });
     } else if (provider === 'rakuten') {
-      const applicationId = localStorage.getItem(RAKUTEN_APP_ID_STORAGE) || '';
+      const applicationId = (localStorage.getItem(RAKUTEN_APP_ID_STORAGE) || '').trim();
       result = await invoke<BookInfoFromApi>('fetch_book_info_from_rakuten', {
-        isbn: isbnInput.value.trim(),
+        isbn: normalizedIsbn,
         applicationId,
       });
     } else {
       result = await invoke<BookInfoFromApi>('fetch_book_info_from_ndl', {
-        isbn: isbnInput.value.trim(),
+        isbn: normalizedIsbn,
       });
     }
     // 取得した情報を一時保持
@@ -211,7 +243,7 @@ function processJanCode() {
   form.value.title = tempBookInfo.value.title;
   form.value.author = tempBookInfo.value.author;
   form.value.publisher = tempBookInfo.value.publisher;
-  form.value.isbn = isbnInput.value.trim();
+  form.value.isbn = normalizeIsbn(isbnInput.value);
   form.value.c_code = cCode;
   form.value.price = price;
 
@@ -228,7 +260,7 @@ function skipJanCode() {
   form.value.title = tempBookInfo.value.title;
   form.value.author = tempBookInfo.value.author;
   form.value.publisher = tempBookInfo.value.publisher;
-  form.value.isbn = isbnInput.value.trim();
+  form.value.isbn = normalizeIsbn(isbnInput.value);
 
   // ポップアップを閉じて手動入力タブに切り替え
   showJanPopup.value = false;

@@ -47,11 +47,10 @@ async function handleDeleteConfirm() {
   try {
     await invoke('delete_genre', { id: deletingGenre.value.id });
     emit('genre-deleted', deletingGenre.value.id);
-    // ローカルのリストからも削除
-    const index = genreList.value.findIndex(g => g.id === deletingGenre.value!.id);
-    if (index !== -1) {
-      genreList.value.splice(index, 1);
-    }
+    // ジャンル削除で「未分類」が新規作成される可能性があるため再取得する
+    await fetchGenres();
+    // 削除完了後は編集モードを終了して通常状態へ戻す
+    isEditMode.value = false;
     handleDeleteCancel();
   } catch (e) {
     console.error('Failed to delete genre:', e);
@@ -91,7 +90,12 @@ function handleKeyDown(e: KeyboardEvent) {
 
 async function fetchGenres() {
   try {
-    genreList.value = await invoke('get_genres');
+    const nextGenres = await invoke<Genre[]>('get_genres');
+    genreList.value = nextGenres;
+    if (selectedGenreId.value !== -1 && !nextGenres.some((g) => g.id === selectedGenreId.value)) {
+      selectedGenreId.value = -1;
+      emit('genre-selected', -1);
+    }
   } catch (e) {
     console.error('Failed to fetch genres:', e);
   }

@@ -17,15 +17,40 @@ const emit = defineEmits<{
   (e: 'book-updated'): void
 }>();
 
+type ColumnKey = 'isbn' | 'author' | 'publisher' | 'c_code' | 'price' | 'is_read';
+type ResizableColumnKey = 'title' | ColumnKey;
+type VisibleColumns = Record<ColumnKey, boolean>;
+
 let lastClickedBookId: number | null = null;
 const isShifting = ref(false);
 
 const selectedBookIds = ref(new Set<number>());
+const selectedIds = computed(() => Array.from(selectedBookIds.value));
 
 // 選択状態が変更されたら親に通知する
-watch(selectedBookIds, (newSelection) => {
-  emit('selection-change', Array.from(newSelection));
-}, { deep: true });
+watch(selectedIds, (ids) => {
+  emit('selection-change', ids);
+});
+
+// 表示中リストに存在しない選択IDを除外（ジャンル切替・削除後の不整合対策）
+watch(() => props.books, (books) => {
+  const existingIds = new Set(books.map((book) => book.id));
+  const prunedSelection = new Set<number>();
+
+  selectedBookIds.value.forEach((id) => {
+    if (existingIds.has(id)) {
+      prunedSelection.add(id);
+    }
+  });
+
+  if (prunedSelection.size !== selectedBookIds.value.size) {
+    selectedBookIds.value = prunedSelection;
+  }
+
+  if (lastClickedBookId !== null && !existingIds.has(lastClickedBookId)) {
+    lastClickedBookId = null;
+  }
+}, { immediate: true });
 
 const allSelected = computed(() => {
   if (props.books.length === 0) return false;
@@ -43,9 +68,9 @@ function toggleBookSelection(bookId: number) {
 function toggleSelectAll(event: Event) {
   const target = event.target as HTMLInputElement;
   if (target.checked) {
-    props.books.forEach(book => selectedBookIds.value.add(book.id));
+    selectedBookIds.value = new Set(props.books.map((book) => book.id));
   } else {
-    selectedBookIds.value.clear();
+    selectedBookIds.value = new Set();
   }
 }
 
@@ -74,7 +99,7 @@ function handleRowClick(bookId: number, event: MouseEvent) {
         selectedBookIds.value.add(props.books[i].id);
       }
     }
-  } else if (event.ctrlKey) {
+  } else if (event.ctrlKey || event.metaKey) {
     // Ctrlキーが押されている場合は、現在の選択状態をトグル
     toggleBookSelection(bookId);
     // アンカーを更新
@@ -109,7 +134,7 @@ function loadFromLocalStorage<T extends object>(key: string, defaultValue: T): T
   return defaultValue;
 }
 
-const defaultVisibleColumns = {
+const defaultVisibleColumns: VisibleColumns = {
   isbn: false, // デフォルトで非表示に
   author: true,
   publisher: true,
@@ -118,7 +143,7 @@ const defaultVisibleColumns = {
   is_read: true,
 };
 
-const visibleColumns = ref(loadFromLocalStorage('bibly_visible_columns', defaultVisibleColumns));
+const visibleColumns = ref<VisibleColumns>(loadFromLocalStorage('bibly_visible_columns', defaultVisibleColumns));
 
 watch(visibleColumns, (newValue) => {
   localStorage.setItem('bibly_visible_columns', JSON.stringify(newValue));
@@ -128,7 +153,7 @@ watch(visibleColumns, (newValue) => {
 const showColumnMenu = ref(false);
 const columnMenuRef = ref<HTMLElement | null>(null);
 const columnBtnRef = ref<HTMLElement | null>(null);
-const columnOptions = [
+const columnOptions: { key: ColumnKey; label: string }[] = [
   { key: 'isbn', label: 'ISBN' },
   { key: 'author', label: '著者' },
   { key: 'publisher', label: '出版社' },
@@ -141,8 +166,8 @@ function toggleColumnMenu() {
   showColumnMenu.value = !showColumnMenu.value;
 }
 
-function toggleColumn(key: string) {
-  (visibleColumns.value as any)[key] = !(visibleColumns.value as any)[key];
+function toggleColumn(key: ColumnKey) {
+  visibleColumns.value[key] = !visibleColumns.value[key];
 }
 
 function onClickOutside(e: MouseEvent) {
@@ -158,7 +183,7 @@ function onClickOutside(e: MouseEvent) {
   }
 }
 
-const defaultColumnWidths: Record<string, number> = {
+const defaultColumnWidths: Record<ResizableColumnKey, number> = {
   title: 240,
   isbn: 130,
   author: 180,
@@ -168,7 +193,9 @@ const defaultColumnWidths: Record<string, number> = {
   is_read: 70,
 };
 
-const columnWidths = ref(loadFromLocalStorage('bibly_column_widths', defaultColumnWidths));
+const columnWidths = ref<Record<ResizableColumnKey, number>>(
+  loadFromLocalStorage('bibly_column_widths', defaultColumnWidths)
+);
 
 watch(columnWidths, (newValue) => {
   localStorage.setItem('bibly_column_widths', JSON.stringify(newValue));
@@ -187,11 +214,11 @@ const tableWidth = computed(() => {
 });
 
 const isResizing = ref(false);
-const resizingCol = ref<string | null>(null);
+const resizingCol = ref<ResizableColumnKey | null>(null);
 let startX = 0;
 let startWidth = 0;
 
-function startResize(colKey: string, e: MouseEvent) {
+function startResize(colKey: ResizableColumnKey, e: MouseEvent) {
   e.preventDefault();
   isResizing.value = true;
   resizingCol.value = colKey;
@@ -345,6 +372,7 @@ async function confirmDelete() {
   try {
     await invoke('delete_book', { id: bookToDelete.value.id });
     emit('book-deleted', bookToDelete.value.id);
+    closeEdit();
   } catch (e) {
     console.error('Failed to delete book:', e);
     // ここでユーザーにエラー通知を表示することもできる
@@ -373,17 +401,25 @@ async function deleteSelectedBooks() {
   const idsToDelete = Array.from(selectedBookIds.value);
   if (idsToDelete.length === 0) return;
 
-  try {
-    // 複数の削除処理を並行して実行
-    await Promise.all(idsToDelete.map(id => invoke('delete_book', { id })));
-    // 親コンポーネントに削除されたIDリストを通知
-    emit('books-deleted', idsToDelete);
-    // 選択状態をクリア
-    selectedBookIds.value.clear();
-  } catch (e) {
-    console.error('一括削除に失敗しました', e);
-    // ここでユーザーにエラー通知を表示することもできる
+  const deleteResults = await Promise.allSettled(
+    idsToDelete.map((id) => invoke('delete_book', { id }))
+  );
+
+  const deletedIds: number[] = [];
+  const failedIds: number[] = [];
+  deleteResults.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      deletedIds.push(idsToDelete[index]);
+    } else {
+      failedIds.push(idsToDelete[index]);
+      console.error(`書籍ID ${idsToDelete[index]} の削除に失敗`, result.reason);
+    }
+  });
+
+  if (deletedIds.length > 0) {
+    emit('books-deleted', deletedIds);
   }
+  selectedBookIds.value = new Set(failedIds);
 }
 
 defineExpose({
@@ -411,10 +447,10 @@ defineExpose({
           <div v-if="showColumnMenu" ref="columnMenuRef" class="column-menu" role="menu">
             <ul>
               <li v-for="opt in columnOptions" :key="opt.key" @click.stop="toggleColumn(opt.key)" class="column-item"
-                :class="{ active: (visibleColumns as any)[opt.key] }" role="menuitemcheckbox"
-                :aria-checked="(visibleColumns as any)[opt.key]">
+                :class="{ active: visibleColumns[opt.key] }" role="menuitemcheckbox"
+                :aria-checked="visibleColumns[opt.key]">
                 <span class="check-area">
-                  <span v-if="(visibleColumns as any)[opt.key]" class="check-mark">✓</span>
+                  <span v-if="visibleColumns[opt.key]" class="check-mark">✓</span>
                 </span>
                 <span class="label">{{ opt.label }}</span>
               </li>

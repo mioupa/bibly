@@ -99,7 +99,7 @@ function handleGenreAdded(genre: Genre) {
 
 function handleBookDeleted(id: number) {
   bookList.value = bookList.value.filter(book => book.id !== id);
-  checkAndCleanUnclassifiedGenre();
+  checkAndCleanEmptyGenres();
 }
 
 function handleGenreDeleted(genreId: number) {
@@ -142,33 +142,64 @@ function handleBulkDeleteCancel() {
 function onBooksDeleted(deletedIds: number[]) {
   bookList.value = bookList.value.filter(book => !deletedIds.includes(book.id));
   selectedIds.value = [];
-  checkAndCleanUnclassifiedGenre();
+  checkAndCleanEmptyGenres();
 }
 
-async function checkAndCleanUnclassifiedGenre() {
-  try {
-    const genres = await invoke<Genre[]>('get_genres');
-    const unclassifiedGenre = genres.find(g => g.name === '未分類');
+let cleanupEmptyGenresPromise: Promise<void> | null = null;
+function checkAndCleanEmptyGenres(): Promise<void> {
+  if (cleanupEmptyGenresPromise) {
+    return cleanupEmptyGenresPromise;
+  }
 
-    if (unclassifiedGenre) {
-      const count = await invoke<number>('get_book_count_by_genre', { genreId: unclassifiedGenre.id });
-      if (count === 0) {
-        await invoke('delete_genre', { genreId: unclassifiedGenre.id });
-        // ジャンルリストを更新
+  cleanupEmptyGenresPromise = (async () => {
+    try {
+      const genres = await invoke<Genre[]>('get_genres');
+      const counts = await Promise.all(
+        genres.map(async (genre) => ({
+          id: genre.id,
+          count: await invoke<number>('get_book_count_by_genre', { genreId: genre.id }),
+        }))
+      );
+
+      const emptyGenreIds = counts.filter((item) => item.count === 0).map((item) => item.id);
+      if (emptyGenreIds.length === 0) {
+        return;
+      }
+
+      const results = await Promise.allSettled(
+        emptyGenreIds.map((id) => invoke('delete_genre', { id }))
+      );
+
+      const deletedIds: number[] = [];
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          deletedIds.push(emptyGenreIds[index]);
+        } else {
+          console.error(`Failed to delete empty genre: ${emptyGenreIds[index]}`, result.reason);
+        }
+      });
+
+      if (deletedIds.length > 0) {
+        deletedIds.forEach((id) => handleGenreDeleted(id));
         genreListRef.value?.fetchGenres();
       }
+    } catch (e) {
+      console.error('Failed to check and clean empty genres:', e);
+    } finally {
+      cleanupEmptyGenresPromise = null;
     }
-  } catch (e) {
-    console.error('Failed to check and clean unclassified genre:', e);
-  }
+  })();
+
+  return cleanupEmptyGenresPromise;
 }
 
 function handleBookUpdated() {
-  checkAndCleanUnclassifiedGenre();
+  checkAndCleanEmptyGenres();
 }
 
 onMounted(() => {
   fetchAllBooks();
+  checkAndCleanEmptyGenres();
 });
 </script>
 
