@@ -3,6 +3,8 @@ import { ref, onMounted, watch, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { Genre, NewBook, Book, BookInfoFromApi } from '../types';
 
+type ApiProvider = 'ndl' | 'google' | 'rakuten';
+
 const emit = defineEmits<{
   (e: 'book-added', book: Book): void
   (e: 'genre-added', genre: Genre): void
@@ -33,12 +35,19 @@ const isbnInputEl = ref<HTMLInputElement | null>(null); // DOM要素への参照
 const showJanPopup = ref(false);
 const janCode = ref('');
 const janErrorMsg = ref('');
-const tempBookInfo = ref<BookInfoFromApi | null>(null); // NDLからの情報を一時保持
+const tempBookInfo = ref<BookInfoFromApi | null>(null); // APIからの情報を一時保持
 const janInputEl = ref<HTMLInputElement | null>(null); // JANコード入力欄のDOM参照
 
 const GOOGLE_API_KEY_STORAGE = 'googleBooksApiKey';
 const RAKUTEN_APP_ID_STORAGE = 'rakutenApplicationId';
-const PROVIDER_STORAGE = 'bookInfoApiProvider';
+const API_PRIORITY_STORAGE = 'bookInfoApiPriority';
+const LEGACY_PROVIDER_STORAGE = 'bookInfoApiProvider';
+const ALL_API_PROVIDERS: ApiProvider[] = ['ndl', 'google', 'rakuten'];
+const PROVIDER_LABELS: Record<ApiProvider, string> = {
+  ndl: 'NDL',
+  google: 'Google Books',
+  rakuten: 'Rakuten Books',
+};
 
 function normalizeIsbn(raw: string): string {
   return raw.replace(/[-\s]/g, '').trim();
@@ -46,6 +55,68 @@ function normalizeIsbn(raw: string): string {
 
 function isValidIsbnFormat(isbn: string): boolean {
   return /^(?:\d{9}[\dXx]|\d{13})$/.test(isbn);
+}
+
+function isFilled(value: string | undefined): boolean {
+  return Boolean(value?.trim());
+}
+
+function normalizePriority(list: ApiProvider[]): ApiProvider[] {
+  const unique = list.filter((provider, index, arr) => arr.indexOf(provider) === index);
+  const missing = ALL_API_PROVIDERS.filter(provider => !unique.includes(provider));
+  return [...unique, ...missing];
+}
+
+function parseStoredPriority(raw: string | null): ApiProvider[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const valid = parsed.filter((value): value is ApiProvider => ALL_API_PROVIDERS.includes(value));
+    if (valid.length === 0) return null;
+    return normalizePriority(valid);
+  } catch {
+    return null;
+  }
+}
+
+function getApiPriority(): ApiProvider[] {
+  const storedPriority = parseStoredPriority(localStorage.getItem(API_PRIORITY_STORAGE));
+  if (storedPriority) {
+    return storedPriority;
+  }
+
+  const legacy = localStorage.getItem(LEGACY_PROVIDER_STORAGE);
+  if (legacy && ALL_API_PROVIDERS.includes(legacy as ApiProvider)) {
+    const selected = legacy as ApiProvider;
+    return [selected, ...ALL_API_PROVIDERS.filter(provider => provider !== selected)];
+  }
+
+  return [...ALL_API_PROVIDERS];
+}
+
+function mergeBookInfo(current: BookInfoFromApi | null, incoming: BookInfoFromApi): BookInfoFromApi {
+  const next = {
+    title: current?.title?.trim() || '',
+    author: current?.author?.trim() || '',
+    publisher: current?.publisher?.trim() || '',
+  };
+
+  if (!isFilled(next.title) && isFilled(incoming.title)) next.title = incoming.title.trim();
+  if (!isFilled(next.author) && isFilled(incoming.author)) next.author = incoming.author.trim();
+  if (!isFilled(next.publisher) && isFilled(incoming.publisher)) next.publisher = incoming.publisher.trim();
+
+  return next;
+}
+
+function hasAllFields(info: BookInfoFromApi | null): boolean {
+  return Boolean(info && isFilled(info.title) && isFilled(info.author) && isFilled(info.publisher));
+}
+
+function toErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
 // JANコードポップアップが表示されたら入力欄にフォーカスを当てる
@@ -171,47 +242,63 @@ async function searchByIsbn() {
     return;
   }
 
-  const provider = (localStorage.getItem(PROVIDER_STORAGE) as 'ndl' | 'google' | 'rakuten') || 'ndl';
-
-  if (provider === 'google' && !(localStorage.getItem(GOOGLE_API_KEY_STORAGE) || '').trim()) {
-    errorMsg.value = 'Google Books APIキーが未設定です。設定画面で入力してください。';
-    return;
-  }
-
-  if (provider === 'rakuten' && !(localStorage.getItem(RAKUTEN_APP_ID_STORAGE) || '').trim()) {
-    errorMsg.value = 'RakutenアプリケーションIDが未設定です。設定画面で入力してください。';
-    return;
-  }
+  const providers = getApiPriority();
 
   isbnInput.value = normalizedIsbn;
   searching.value = true;
   try {
-    let result: BookInfoFromApi;
-    if (provider === 'google') {
-      const apiKey = (localStorage.getItem(GOOGLE_API_KEY_STORAGE) || '').trim();
-      result = await invoke<BookInfoFromApi>('fetch_book_info_from_google_books', {
-        isbn: normalizedIsbn,
-        apiKey,
-      });
-    } else if (provider === 'rakuten') {
-      const applicationId = (localStorage.getItem(RAKUTEN_APP_ID_STORAGE) || '').trim();
-      result = await invoke<BookInfoFromApi>('fetch_book_info_from_rakuten', {
-        isbn: normalizedIsbn,
-        applicationId,
-      });
-    } else {
-      result = await invoke<BookInfoFromApi>('fetch_book_info_from_ndl', {
-        isbn: normalizedIsbn,
-      });
+    let mergedInfo: BookInfoFromApi | null = null;
+    const errors: string[] = [];
+
+    for (const provider of providers) {
+      try {
+        let result: BookInfoFromApi;
+        if (provider === 'google') {
+          const apiKey = (localStorage.getItem(GOOGLE_API_KEY_STORAGE) || '').trim();
+          result = await invoke<BookInfoFromApi>('fetch_book_info_from_google_books', {
+            isbn: normalizedIsbn,
+            apiKey: apiKey || undefined,
+          });
+        } else if (provider === 'rakuten') {
+          const applicationId = (localStorage.getItem(RAKUTEN_APP_ID_STORAGE) || '').trim();
+          if (!applicationId) {
+            errors.push(`[${PROVIDER_LABELS[provider]}] アプリケーションID未設定のためスキップ`);
+            continue;
+          }
+          result = await invoke<BookInfoFromApi>('fetch_book_info_from_rakuten', {
+            isbn: normalizedIsbn,
+            applicationId,
+          });
+        } else {
+          result = await invoke<BookInfoFromApi>('fetch_book_info_from_ndl', {
+            isbn: normalizedIsbn,
+          });
+        }
+
+        mergedInfo = mergeBookInfo(mergedInfo, result);
+        if (hasAllFields(mergedInfo)) {
+          break;
+        }
+      } catch (e) {
+        errors.push(`[${PROVIDER_LABELS[provider]}] ${toErrorMessage(e)}`);
+      }
     }
+
+    if (!mergedInfo || !isFilled(mergedInfo.title)) {
+      errorMsg.value = errors.length > 0
+        ? `書籍情報の取得に失敗しました: ${errors.join(' / ')}`
+        : '書籍情報が見つかりませんでした';
+      return;
+    }
+
     // 取得した情報を一時保持
-    tempBookInfo.value = result;
+    tempBookInfo.value = mergedInfo;
     // JANコード入力ポップアップを表示
     showJanPopup.value = true;
     janCode.value = '';
     janErrorMsg.value = '';
   } catch (e) {
-    errorMsg.value = `書籍情報の取得に失敗しました: ${e}`;
+    errorMsg.value = `書籍情報の取得に失敗しました: ${toErrorMessage(e)}`;
     console.error(e);
   } finally {
     searching.value = false;
@@ -256,7 +343,7 @@ function processJanCode() {
 function skipJanCode() {
   if (!tempBookInfo.value) return;
 
-  // NDLの情報だけをフォームにセット
+  // APIから取得した情報をフォームにセット
   form.value.title = tempBookInfo.value.title;
   form.value.author = tempBookInfo.value.author;
   form.value.publisher = tempBookInfo.value.publisher;
