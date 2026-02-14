@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import {
+  getSavedFontName,
+  saveAndApplyFontName,
+} from '../fontSettings';
 
 type ApiProvider = 'ndl' | 'google' | 'rakuten';
+type SettingsTab = 'api' | 'appearance';
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -12,6 +17,8 @@ const rakutenAppId = ref('');
 const apiPriority = ref<ApiProvider[]>(['ndl', 'google', 'rakuten']);
 const draggedIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
+const fontName = ref('');
+const activeTab = ref<SettingsTab>('api');
 const saving = ref(false);
 const errorMsg = ref('');
 
@@ -59,6 +66,7 @@ onMounted(() => {
   rakutenAppId.value = localStorage.getItem(RAKUTEN_APP_ID_STORAGE) || '';
   const storedPriority = parseStoredPriority(localStorage.getItem(API_PRIORITY_STORAGE));
   apiPriority.value = storedPriority || getLegacyPriority(localStorage.getItem(LEGACY_PROVIDER_STORAGE));
+  fontName.value = getSavedFontName();
 });
 
 function moveProvider(from: number, to: number) {
@@ -108,6 +116,7 @@ function save() {
     localStorage.setItem(LEGACY_PROVIDER_STORAGE, apiPriority.value[0]);
     localStorage.setItem(GOOGLE_API_KEY_STORAGE, googleApiKey.value.trim());
     localStorage.setItem(RAKUTEN_APP_ID_STORAGE, rakutenAppId.value.trim());
+    saveAndApplyFontName(fontName.value);
     emit('close');
   } catch (e) {
     console.error(e);
@@ -120,6 +129,10 @@ function save() {
 function cancel() {
   emit('close');
 }
+
+function setActiveTab(tab: SettingsTab) {
+  activeTab.value = tab;
+}
 </script>
 
 <template>
@@ -129,51 +142,88 @@ function cancel() {
       <button type="button" class="close-btn" @click="cancel" aria-label="閉じる">×</button>
     </div>
 
-    <div class="settings-body" style="padding:12px;">
-      <div class="row" style="margin-bottom:10px;">
-        <label style="display:block;font-weight:600;margin-bottom:6px;">API優先順位（上から順）</label>
-        <div class="priority-list">
-          <div
-            class="priority-item"
-            :class="{ 'drag-over': dragOverIndex === index }"
-            v-for="(provider, index) in apiPriority"
-            :key="provider"
-            @dragover="onDragOver(index, $event)"
-            @drop="onDrop(index, $event)"
-          >
-            <span>{{ PROVIDER_LABELS[provider] }}</span>
-            <div class="priority-actions">
-              <button
-                type="button"
-                class="drag-handle"
-                draggable="true"
-                aria-label="ドラッグして並び替え"
-                title="ドラッグして並び替え"
-                @dragstart="onDragStart(index, $event)"
-                @dragend="onDragEnd"
-              >
-                &#9776;
-              </button>
+    <div class="tab-bar" role="tablist" aria-label="設定タブ">
+      <button
+        type="button"
+        class="tab-btn"
+        :class="{ active: activeTab === 'api' }"
+        role="tab"
+        :aria-selected="activeTab === 'api'"
+        @click="setActiveTab('api')"
+      >
+        API設定
+      </button>
+      <button
+        type="button"
+        class="tab-btn"
+        :class="{ active: activeTab === 'appearance' }"
+        role="tab"
+        :aria-selected="activeTab === 'appearance'"
+        @click="setActiveTab('appearance')"
+      >
+        表示設定
+      </button>
+    </div>
+
+    <div class="settings-body">
+      <div v-if="activeTab === 'api'">
+        <div class="row">
+          <label class="row-label">API優先順位（上から順）</label>
+          <div class="priority-list">
+            <div
+              class="priority-item"
+              :class="{ 'drag-over': dragOverIndex === index }"
+              v-for="(provider, index) in apiPriority"
+              :key="provider"
+              @dragover="onDragOver(index, $event)"
+              @drop="onDrop(index, $event)"
+            >
+              <span>{{ PROVIDER_LABELS[provider] }}</span>
+              <div class="priority-actions">
+                <button
+                  type="button"
+                  class="drag-handle"
+                  draggable="true"
+                  aria-label="ドラッグして並び替え"
+                  title="ドラッグして並び替え"
+                  @dragstart="onDragStart(index, $event)"
+                  @dragend="onDragEnd"
+                >
+                  &#9776;
+                </button>
+              </div>
             </div>
           </div>
         </div>
+
+        <div class="row">
+          <label class="row-label">Google Books API キー</label>
+          <input v-model="googleApiKey" class="text-input" placeholder="API キーを入力（未入力可）" />
+          <p class="help-text">未入力でもGoogle Books検索は利用できます。必要に応じてAPIキーを設定してください。</p>
+        </div>
+
+        <div class="row">
+          <label class="row-label">Rakuten Books アプリケーションID</label>
+          <input v-model="rakutenAppId" class="text-input" placeholder="アプリケーションIDを入力" />
+        </div>
       </div>
 
-      <div class="row" style="margin-bottom:10px;">
-        <label style="display:block;font-weight:600;margin-bottom:6px;">Google Books API キー</label>
-        <input v-model="googleApiKey" placeholder="API キーを入力（未入力可）" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
-        <p style="margin:8px 0 0;font-size:12px;color:#666;">未入力でもGoogle Books検索は利用できます。必要に応じてAPIキーを設定してください。</p>
+      <div v-else>
+        <div class="row">
+          <label class="row-label">フォント名（任意）</label>
+          <input
+            v-model="fontName"
+            class="text-input"
+            placeholder="例: BIZ UDPGothic / Noto Sans JP / 游明朝"
+          />
+          <p class="help-text">未入力、または指定フォントが見つからない場合はOS標準フォントにフォールバックします。</p>
+        </div>
       </div>
 
-      <div class="row" style="margin-bottom:10px;">
-        <label style="display:block;font-weight:600;margin-bottom:6px;">Rakuten Books アプリケーションID</label>
-        <input v-model="rakutenAppId" placeholder="アプリケーションIDを入力" style="width:100%;padding:6px;border:1px solid #bbb;border-radius:4px;" />
-      </div>
-
-      <div class="actions" style="display:flex;gap:12px;align-items:center;">
+      <div class="actions">
         <button class="btn primary" @click="save" :disabled="saving">保存</button>
         <button class="btn" @click="cancel" :disabled="saving">キャンセル</button>
-        <span class="error" v-if="errorMsg" style="color:#d00;">{{ errorMsg }}</span>
+        <span class="error" v-if="errorMsg">{{ errorMsg }}</span>
       </div>
     </div>
   </div>
@@ -203,8 +253,64 @@ function cancel() {
 .close-btn:hover {
   background: #eee;
 }
+
+.tab-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+
+.tab-btn {
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  border-radius: 6px 6px 0 0;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #fff;
+  border-bottom-color: #fff;
+  font-weight: 600;
+}
+
+.settings-body {
+  border-top: 1px solid #ddd;
+  margin-top: -1px;
+  padding: 12px;
+}
+
+.row {
+  margin-bottom: 10px;
+}
+
+.row-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.text-input {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.help-text {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #666;
+}
+
 .actions .btn {
   padding: 6px 12px;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 .priority-list {
   display: flex;
@@ -245,5 +351,6 @@ function cancel() {
 .error {
   margin-left: 8px;
   font-size: 13px;
+  color: #d00;
 }
 </style>
